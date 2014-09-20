@@ -1,0 +1,424 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+import os, os.path, re, sip, subprocess, sys
+
+from PyQt5.Qt import *
+
+def which(program):
+    def is_exe(fpath):
+        return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
+
+    fpath, fname = os.path.split(program)
+    if fpath:
+        if is_exe(program):
+            return program
+    else:
+        for path in os.environ["PATH"].split(os.pathsep):
+            path = path.strip('"')
+            exe_file = os.path.join(path, program)
+            if is_exe(exe_file):
+                return exe_file
+
+    return None
+
+class IntelPowerControl(QWidget):
+    update_interval = 2000
+    cpubasepath     = '/sys/devices/system/cpu'
+    thermalbasepath = '/sys/class/thermal'
+    gpubasepath     = '/sys/class/drm'
+    gpuclkdiv       = 50
+    suidhelper      = which( 'intel-power-control-helper')
+    msgtimeout      = 2000
+    
+    def __init__(self,parent=None):
+        super(IntelPowerControl,self).__init__(parent,Qt.WindowStaysOnTopHint)
+        self.layout = QVBoxLayout()
+        self.initCPUs()
+        self.initThermals()
+        self.initGPUs()
+        self.initControls()
+        self.layout.addStretch()
+        self.setLayout(self.layout)
+        self.updateAll()
+        self.timer = QTimer()
+        self.timer.setInterval( self.update_interval)
+        self.timer.timeout.connect( self.updateAll)
+        self.timer.start()
+        self.setFixedSize( self.sizeHint())
+        d = QApplication.desktop()
+        screen = -1
+        nscreens = d.screenCount()
+        if nscreens > 1:
+            pri = d.primaryScreen()
+            screens = range(nscreens)
+            if pri > -1: screens.remove(pri)
+            screen  = screens[0]
+        sr = d.availableGeometry(screen)
+        self.move( sr.center()-QPoint(self.width()/2,self.height()/2))
+        if not self.suidhelper:
+            self.status.showMessage(
+                "Could not find suid helper, disabling inputs")
+
+    def initCPUs(self):
+        box = QGroupBox("CPU State")
+        layout = QHBoxLayout()
+        self.cpulabels = {}
+        cpus = [ c for c in os.listdir(self.cpubasepath)
+                 if re.match( r'^cpu\d$', c) ]
+        self.cpumapper = QSignalMapper()
+        for i in sorted(cpus):
+            l = QPushButton(i)
+            if not self.suidhelper: l.setDisabled(True)
+            self.cpumapper.setMapping( l, i)
+            l.clicked.connect( self.cpumapper.map)
+            layout.addWidget(l)
+            self.cpulabels[i] = (l, 'green')
+        self.cpumapper.mapped['QString'].connect(self.toggleCPU)
+        box.setLayout(layout)
+        self.layout.addWidget(box)
+
+    def initThermals(self):
+        box = QGroupBox("Thermal Zones")
+        layout = QGridLayout()
+        self.thermals = {}
+        thermals = [ t.strip() for t in os.listdir(self.thermalbasepath)
+                     if t.startswith('thermal_zone') ]
+        layout.addWidget(QLabel("Temperature"), 0, 1)
+        layout.addWidget(QLabel("Type"), 0, 2)
+        i = 1
+        for t in sorted(thermals):
+            layout.addWidget( QLabel(t), i, 0)
+            tlabel = QLabel(u"0°C")
+            layout.addWidget( tlabel, i, 1)
+            typename = self.readValue(
+                os.path.join(self.thermalbasepath,t,'type'))
+            layout.addWidget( QLabel(typename), i, 2)
+            self.thermals[t] = (tlabel, 0, typename)
+            i+=1
+        layout.setColumnStretch(2,1)
+        box.setLayout(layout)
+        self.layout.addWidget(box)
+            
+    def initGPUs(self):
+        box = QGroupBox("GPU Clock")
+        layout = QGridLayout()
+        self.gpus = {}
+        self.gpusliders = {}
+        gpus = [ g for g in os.listdir(self.gpubasepath)
+                 if re.match( r'^card\d$', g) ]
+        self.gpuminmapper = QSignalMapper()
+        self.gpumaxmapper = QSignalMapper()
+        layout.addWidget(QLabel("Current"), 0, 1)
+        layout.addWidget(QLabel("Minimum"), 0, 2)
+        layout.addWidget(QLabel("Maximum"), 0, 3)
+        i = 1
+        for t in sorted(gpus):
+            layout.addWidget(QLabel(t),i,0)
+            l0 = QLabel("0 MHz")
+            layout.addWidget(l0,i,1)
+            l1 = QLabel("0 MHz")
+            layout.addWidget(l1,i,2)
+            l2 = QLabel("0 MHz")
+            layout.addWidget(l2,i,3)
+            self.gpus[t] = ( (l0,0), (l1,0), (l2,0))
+            gts = [ g for g in os.listdir(os.path.join(self.gpubasepath,t))
+                    if g.startswith( 'gt_RP') ]
+            if not len(gts):
+                continue
+            
+            states = {}
+            for g in gts:
+                state = re.match(r'gt_(RP[n\d])_freq_mhz', g).groups()[0]
+                states[state] = self.readValue(
+                    os.path.join(self.gpubasepath,t,g))
+            rps = sorted(states.keys())
+            rps_max = int(states[rps[0]])
+            rps_min = int(states[rps[-1]])
+            i += 1
+            minslider = QSlider(Qt.Horizontal)
+            minslider.setRange( round(rps_min/self.gpuclkdiv),
+                                round(rps_max/self.gpuclkdiv))
+            minslider.setTickPosition(QSlider.TicksBelow)
+            minslider.setTickInterval(1)
+            minslider.setPageStep(1)
+            if not self.suidhelper: minslider.setDisabled(True)
+            self.gpuminmapper.setMapping( minslider, t)
+            minslider.valueChanged.connect( self.gpuminmapper.map)
+            layout.addWidget(minslider,i, 1, 1, 3)
+            i += 1
+            maxslider = QSlider(Qt.Horizontal)
+            maxslider.setRange( round(rps_min/self.gpuclkdiv),
+                                round(rps_max/self.gpuclkdiv))
+            maxslider.setTickPosition(QSlider.TicksBelow)
+            maxslider.setTickInterval(1)
+            maxslider.setPageStep(1)
+            if not self.suidhelper: maxslider.setDisabled(True)
+            self.gpumaxmapper.setMapping( maxslider, t)
+            maxslider.valueChanged.connect( self.gpumaxmapper.map)
+            resetBtn = QPushButton("Reset")
+            resetBtn.clicked.connect(
+                lambda:
+                (minslider.setValue( minslider.minimum()),
+                 maxslider.setValue( maxslider.maximum()))
+            )
+            layout.addWidget(resetBtn, i, 0)
+            layout.addWidget(maxslider,i, 1, 1, 3)
+            i += 1
+            self.gpusliders[t] = (minslider, maxslider)
+        self.gpuminmapper.mapped['QString'].connect(self.setMinimumClock)
+        self.gpumaxmapper.mapped['QString'].connect(self.setMaximumClock)
+        #layout.setColumnStretch(3,1)
+        layout.setHorizontalSpacing(10)
+        box.setLayout(layout)
+        self.layout.addWidget(box)
+
+    def initControls(self):
+        self.counter = 0
+        self.sumtemp = 0.
+        self.max_count = 5
+        box = QGroupBox("Controls")
+        layout = QGridLayout()
+        row = 0
+        layout.addWidget( QLabel("Throttle GPU"), row, 0)
+        self.throttlegpu = QCheckBox()
+        self.throttlegpu.toggled.connect( self.toggleThrottling)
+        if not self.suidhelper: self.throttlegpu.setDisabled(True)
+        layout.addWidget( self.throttlegpu, row, 1)
+        row += 1
+        layout.addWidget( QLabel("Max. Temperature"), row, 0)
+        self.maxtemp = QSpinBox()
+        self.maxtemp.setRange(50, 100)
+        self.maxtemp.valueChanged.connect( self.setMaxTemp)
+        if not self.suidhelper: self.maxtemp.setDisabled(True)
+        layout.addWidget(self.maxtemp, row, 1)
+        row += 1
+        layout.addWidget( QLabel("Hysteresis"), row, 0)
+        self.hyst = QSpinBox()
+        self.hyst.setRange(-20, 0)
+        self.hyst.valueChanged.connect( self.setHyst)
+        if not self.suidhelper: self.hyst.setDisabled(True)
+        layout.addWidget(self.hyst, row, 1)
+        row += 1
+        self.tz = QComboBox()
+        self.tz.addItems( sorted(self.thermals.keys()))
+        self.tz.currentIndexChanged.connect( self.setActiveThermal)
+        if not self.suidhelper: self.tz.setDisabled(True)
+        layout.addWidget( QLabel("Thermal"), row, 0)
+        layout.addWidget( self.tz, row, 1)
+        layout.setColumnStretch( row, 1)
+        box.setLayout(layout)
+        self.layout.addWidget(box)
+        self.status = QStatusBar(self)
+        self.layout.addWidget(self.status)
+        self.loadSettings()
+
+    def loadSettings(self):
+        self.status.showMessage("Loading settings", self.msgtimeout)
+        s = QSettings()
+        self.setMaxTemp( int(s.value("maxtemp", 80)))
+        self.setHyst(    int(s.value("hyst",     -5)))
+        self.toggleThrottling( int(s.value("throttlegpu",  1)))
+        self.setActiveThermal( int(s.value("tzindex", -1)))
+        
+    def setMaxTemp(self,newmax):
+        self.maxtemp.setValue(newmax)
+        for k,v in self.thermals.items():
+            label, val, typename = v
+            stylesheet = "QLabel { color: %s }" % \
+                         ("black" if val < newmax else "red")
+            label.setStyleSheet( stylesheet)
+        s = QSettings()
+        s.setValue( "maxtemp", newmax)
+        
+    def setHyst(self,hyst):
+        self.hyst.setValue(hyst)
+        s = QSettings()
+        s.setValue( "hyst", hyst)
+        
+    def toggleThrottling(self, state):
+        self.throttlegpu.setChecked( state)
+        if self.throttlegpu.isEnabled():
+            self.maxtemp.setEnabled( state)
+            self.hyst.setEnabled( state)
+            self.tz.setEnabled( state)
+        s = QSettings()
+        s.setValue( "throttlegpu", int(state))
+        if state == False:
+            for k,v in self.thermals.items():
+                label, val, typename = v
+                stylesheet = "QLabel { color: black }"
+                label.setStyleSheet( stylesheet)
+
+    def setActiveThermal(self, index):
+        self.tz.setCurrentIndex( index)
+        s = QSettings()
+        s.setValue( "tzindex", index)
+        
+    def updateAll(self):
+        self.updateValues()
+        self.updateGUI()
+        if self.throttlegpu.isChecked() and self.suidhelper:
+            self.throttleGPUs()
+
+    def throttleGPUs(self):
+        if self.tz.currentIndex() != -1:
+            v = self.thermals.get(str(self.tz.currentText()), (0,0))
+            self.sumtemp += v[1]
+        else:
+            temp = 0
+            for k,v in self.thermals.items():
+                temp += v[1]
+            temp /= float(len(self.thermals))
+            self.sumtemp += temp
+        self.counter = (self.counter + 1)%self.max_count
+        if self.counter == 0:
+            avgtemp = float(self.sumtemp) / self.max_count
+            #print "Average temperature:", avgtemp
+            self.sumtemp = 0.
+            maxtemp = self.maxtemp.value()
+            hyst = self.hyst.value()
+            changed = False
+            if avgtemp > maxtemp:
+                for k,v in self.gpusliders.items():
+                    if v[1].isEnabled() and v[1].value() != v[1].minimum():
+                        v[1].setValue(  v[1].value()-1)
+                        changed = True
+                if changed:        
+                    self.status.showMessage(
+                        u"Decreasing GPU clocks: %.1f°C > %d°C" %
+                        (avgtemp,maxtemp), self.msgtimeout)
+            elif avgtemp < (maxtemp+hyst):
+                for k,v in self.gpusliders.items():
+                    if v[1].isEnabled() and v[1].value() != v[1].maximum():
+                        v[1].setValue( v[1].value()+1)
+                        changed = True
+                if changed:
+                    self.status.showMessage(
+                        u"Increasing GPU clocks: %.1f°C < %d°C" %
+                        (avgtemp,maxtemp+hyst), self.msgtimeout)
+        
+    def updateValues(self):
+        # cpus
+        for k,v in self.cpulabels.items():
+            online = os.path.join(self.cpubasepath,k,'online')
+            if os.path.exists(online):
+                self.cpulabels[k] = (
+                    v[0], 'green' if int(self.readValue(online)) else 'red')
+            else:
+                self.cpulabels[k] = (v[0], 'green')
+        
+        # thermals
+        for k,v in self.thermals.items():
+            self.thermals[k] = (v[0], int(self.readValue(
+                os.path.join(self.thermalbasepath,k,'temp')))/1000, v[2])
+
+        # gpus
+        for k, v in self.gpus.items():
+            self.gpus[k] = (
+                (v[0][0], int(self.readValue(
+                    os.path.join(self.gpubasepath,k,'gt_cur_freq_mhz')))),
+                (v[1][0], int(self.readValue(
+                    os.path.join(self.gpubasepath,k,'gt_min_freq_mhz')))),
+                (v[2][0], int(self.readValue(
+                    os.path.join(self.gpubasepath,k,'gt_max_freq_mhz'))))
+            )
+        
+    def updateGUI(self):
+        # cpus
+        for k,v in self.cpulabels.items():
+            v[0].setStyleSheet(
+                'QPushButton {color: white; background-color: %s}' % v[1])
+        
+        # thermals
+        for k,v in self.thermals.items():
+            label, val, typename = v
+            label.setText( u"%d°C" % val)
+            if self.throttlegpu.isChecked():
+                if val > self.maxtemp.value():
+                    label.setStyleSheet("QLabel { color: red }")
+                else:
+                    label.setStyleSheet("QLabel { color: black }")
+
+        # gpus
+        for k, v in self.gpus.items():
+            v[0][0].setText("%d MHz" % v[0][1])
+            v[1][0].setText("%d MHz" % v[1][1])
+            v[2][0].setText("%d MHz" % v[2][1])
+        for k,v in self.gpusliders.items():
+            v[0].setValue( int(self.gpus[k][1][1]/self.gpuclkdiv))
+            v[1].setValue( int(self.gpus[k][2][1]/self.gpuclkdiv))
+
+    @pyqtSlot(str)
+    def toggleCPU(self, cpu):
+        if not self.suidhelper: return
+        btn, val = self.cpulabels[str(cpu)]
+        newval = 'red' if val == 'green' else 'green'
+        self.cpulabels[str(cpu)] = (btn, newval)
+        try:
+            subprocess.check_output([self.suidhelper, "-c", cpu],universal_newlines=True)
+        except subprocess.CalledProcessError as err:
+            if err.returncode != 0:
+                self.status.showMessage(str(err.output).strip())
+                return
+                
+        btn.setStyleSheet(
+            'QPushButton {color: white; background-color: %s}' % newval)
+        self.status.showMessage(
+            "Switching %s to %s" %(cpu,newval),self.msgtimeout)
+    
+    @pyqtSlot(str)
+    def setMinimumClock(self, gpu):
+        if not self.suidhelper: return
+        val = self.gpusliders[str(gpu)][0].value()
+        args = [self.suidhelper, "-g", gpu, "-l", str(val*self.gpuclkdiv)]
+        if val > self.gpusliders[str(gpu)][1].value():
+            self.gpusliders[str(gpu)][1].setValue(val)
+            args += [ "-u", str(val*self.gpuclkdiv)]
+        try:
+            subprocess.check_output(args)
+        except subprocess.CalledProcessError as err:
+            if err.returncode != 0:
+                self.status.showMessage(str(err.output).strip())
+                return
+            
+        self.gpus[str(gpu)][1][0].setText("%d MHz" % (val*self.gpuclkdiv))
+        
+    @pyqtSlot(str)
+    def setMaximumClock(self, gpu):
+        if not self.suidhelper: return
+        val = self.gpusliders[str(gpu)][1].value()
+        args = [self.suidhelper, "-g", gpu, "-u", str(val*self.gpuclkdiv)]
+        if val < self.gpusliders[str(gpu)][0].value():
+            self.gpusliders[str(gpu)][0].setValue(val)
+            args += [ "-l", str(val*self.gpuclkdiv)]
+        try:
+            subprocess.check_output(args)
+        except subprocess.CalledProcessError as err:
+            if err.returncode != 0:
+                self.status.showMessage(str(err.output).strip())
+                return
+        self.gpus[str(gpu)][2][0].setText("%d MHz" % (val*self.gpuclkdiv))
+
+    @staticmethod
+    def readValue(fn):
+        ret = ''
+        try:
+            f = open(fn)
+            ret = f.readline()
+            f.close()
+        except: pass
+        return ret.strip()
+
+def main():
+    import signal
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+    a = QApplication(sys.argv)
+    a.setOrganizationName("mechnich")
+    a.setApplicationName( "intel-power-control")
+    i = IntelPowerControl()
+    i.show()
+    return a.exec_()
+
+if __name__ == "__main__":
+    main()
