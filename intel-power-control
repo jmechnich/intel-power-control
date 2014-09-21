@@ -50,7 +50,7 @@ class IntelPowerControl(QWidget):
         nscreens = d.screenCount()
         if nscreens > 1:
             pri = d.primaryScreen()
-            screens = range(nscreens)
+            screens = list(range(nscreens))
             if pri > -1: screens.remove(pri)
             screen  = screens[0]
         sr = d.availableGeometry(screen)
