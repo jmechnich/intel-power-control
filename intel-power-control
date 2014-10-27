@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+# -*- coding: utf-8; mode: python -*-
 import os, os.path, re, sip, subprocess, sys
 
 from PyQt5.Qt import *
@@ -31,7 +31,8 @@ class IntelPowerControl(QWidget):
     msgtimeout      = 2000
     
     def __init__(self,parent=None):
-        super(IntelPowerControl,self).__init__(parent,Qt.WindowStaysOnTopHint)
+        super(IntelPowerControl,self).__init__(parent)
+        self.systray = None
         self.layout = QVBoxLayout()
         self.initCPUs()
         self.initThermals()
@@ -47,18 +48,25 @@ class IntelPowerControl(QWidget):
         self.setFixedSize( self.sizeHint())
         d = QApplication.desktop()
         screen = -1
-        nscreens = d.screenCount()
-        if nscreens > 1:
-            pri = d.primaryScreen()
-            screens = list(range(nscreens))
-            if pri > -1: screens.remove(pri)
-            screen  = screens[0]
+        #nscreens = d.screenCount()
+        #if nscreens > 1:
+        #    pri = d.primaryScreen()
+        #    screens = list(range(nscreens))
+        #    if pri > -1: screens.remove(pri)
+        #    screen  = screens[0]
         sr = d.availableGeometry(screen)
         self.move( sr.center()-QPoint(self.width()/2,self.height()/2))
         if not self.suidhelper:
             self.status.showMessage(
                 "Could not find suid helper, disabling inputs")
 
+    def closeEvent(self,ev):
+        if self.systray and self.minimizetray.isChecked():
+            ev.ignore()
+            self.hide()
+        else:
+            ev.accept()
+        
     def initCPUs(self):
         box = QGroupBox("CPU State")
         layout = QHBoxLayout()
@@ -102,9 +110,9 @@ class IntelPowerControl(QWidget):
     def initGPUs(self):
         box = QGroupBox("GPU Clock")
         layout = QGridLayout()
-        self.gpus = {}
+        self.gpulabels = {}
         self.gpusliders = {}
-        gpus = [ g for g in os.listdir(self.gpubasepath)
+        gpulabels = [ g for g in os.listdir(self.gpubasepath)
                  if re.match( r'^card\d$', g) ]
         self.gpuminmapper = QSignalMapper()
         self.gpumaxmapper = QSignalMapper()
@@ -112,7 +120,7 @@ class IntelPowerControl(QWidget):
         layout.addWidget(QLabel("Minimum"), 0, 2)
         layout.addWidget(QLabel("Maximum"), 0, 3)
         i = 1
-        for t in sorted(gpus):
+        for t in sorted(gpulabels):
             layout.addWidget(QLabel(t),i,0)
             l0 = QLabel("0 MHz")
             layout.addWidget(l0,i,1)
@@ -120,7 +128,7 @@ class IntelPowerControl(QWidget):
             layout.addWidget(l1,i,2)
             l2 = QLabel("0 MHz")
             layout.addWidget(l2,i,3)
-            self.gpus[t] = ( (l0,0), (l1,0), (l2,0))
+            self.gpulabels[t] = ( (l0,0), (l1,0), (l2,0))
             gts = [ g for g in os.listdir(os.path.join(self.gpubasepath,t))
                     if g.startswith( 'gt_RP') ]
             if not len(gts):
@@ -205,6 +213,24 @@ class IntelPowerControl(QWidget):
         if not self.suidhelper: self.tz.setDisabled(True)
         layout.addWidget( QLabel("Thermal"), row, 0)
         layout.addWidget( self.tz, row, 1)
+        row+=1
+        layout.addWidget( QLabel("Always On Top"), row, 0)
+        self.alwaysontop = QCheckBox()
+        self.alwaysontop.stateChanged.connect( self.toggleAlwaysOnTop)
+        layout.addWidget(self.alwaysontop, row, 1)
+        row+=1
+        layout.addWidget( QLabel("Show Systray Icon"), row, 0)
+        self.showsystray = QCheckBox()
+        self.showsystray.stateChanged.connect( self.toggleSystray)
+        layout.addWidget(self.showsystray, row, 1)
+        row+=1
+        layout.addWidget( QLabel("Minimize to tray"), row, 0)
+        self.minimizetray = QCheckBox()
+        self.minimizetray.setEnabled(self.showsystray.isChecked())
+        #self.minimizetray.stateChanged.connect( self.toggleSystray)
+        self.showsystray.stateChanged.connect( self.minimizetray.setEnabled)
+        layout.addWidget(self.minimizetray, row, 1)
+        
         layout.setColumnStretch( row, 1)
         box.setLayout(layout)
         self.layout.addWidget(box)
@@ -212,6 +238,39 @@ class IntelPowerControl(QWidget):
         self.layout.addWidget(self.status)
         self.loadSettings()
 
+    def toggleAlwaysOnTop(self,state):
+        self.alwaysontop.setChecked(state)
+        hidden = self.isHidden()
+        flags = self.windowFlags()
+        if state:
+            flags |= Qt.WindowStaysOnTopHint
+        else:
+            flags &= ~Qt.WindowStaysOnTopHint
+        self.setWindowFlags(flags)
+        if not hidden: self.show()
+        s = QSettings()
+        s.setValue( "alwaysontop", int(state))
+
+    def toggleSystray(self,state):
+        self.showsystray.setChecked(state)
+        if state:
+            self.systray = QSystemTrayIcon(self)
+            pix = QPixmap(22,22)
+            pix.fill(Qt.transparent)
+            self.systray.setIcon(QIcon(pix))
+            self.systray.activated.connect( self.systrayActivated)
+            m = QMenu()
+            m.addAction("Quit", QApplication.quit)
+            self.systray.setContextMenu(m)
+            self.systray.show()
+        else:
+            sip.delete(self.systray)
+            self.systray = None
+
+    def systrayActivated(self,reason):
+        if reason == QSystemTrayIcon.Trigger:
+            self.show()
+    
     def loadSettings(self):
         self.status.showMessage("Loading settings", self.msgtimeout)
         s = QSettings()
@@ -219,6 +278,9 @@ class IntelPowerControl(QWidget):
         self.setHyst(    int(s.value("hyst",     -5)))
         self.toggleThrottling( int(s.value("throttlegpu",  1)))
         self.setActiveThermal( int(s.value("tzindex", -1)))
+        self.toggleAlwaysOnTop( int(s.value("alwaysontop", 0)))
+        self.fgColor = QColor(s.value("fgColor", QColor("#33b0dc")))
+        self.bgColor = QColor(s.value("bgColor", QColor("#144556")))
         
     def setMaxTemp(self,newmax):
         self.maxtemp.setValue(newmax)
@@ -259,6 +321,16 @@ class IntelPowerControl(QWidget):
         self.updateGUI()
         if self.throttlegpu.isChecked() and self.suidhelper:
             self.throttleGPUs()
+        if self.systray:
+            self.updateSystray()
+
+    def updateSystray(self):
+        if not self.systray: return
+        pix = QPixmap(22,22)
+        pix.fill( self.bgColor)
+        p = QPainter(pix)
+        p.end()
+        self.systray.setIcon(QIcon(pix))
 
     def throttleGPUs(self):
         if self.tz.currentIndex() != -1:
@@ -313,8 +385,8 @@ class IntelPowerControl(QWidget):
                 os.path.join(self.thermalbasepath,k,'temp')))/1000, v[2])
 
         # gpus
-        for k, v in self.gpus.items():
-            self.gpus[k] = (
+        for k, v in self.gpulabels.items():
+            self.gpulabels[k] = (
                 (v[0][0], int(self.readValue(
                     os.path.join(self.gpubasepath,k,'gt_cur_freq_mhz')))),
                 (v[1][0], int(self.readValue(
@@ -340,13 +412,13 @@ class IntelPowerControl(QWidget):
                     label.setStyleSheet("QLabel { color: black }")
 
         # gpus
-        for k, v in self.gpus.items():
+        for k, v in self.gpulabels.items():
             v[0][0].setText("%d MHz" % v[0][1])
             v[1][0].setText("%d MHz" % v[1][1])
             v[2][0].setText("%d MHz" % v[2][1])
         for k,v in self.gpusliders.items():
-            v[0].setValue( int(self.gpus[k][1][1]/self.gpuclkdiv))
-            v[1].setValue( int(self.gpus[k][2][1]/self.gpuclkdiv))
+            v[0].setValue( int(self.gpulabels[k][1][1]/self.gpuclkdiv))
+            v[1].setValue( int(self.gpulabels[k][2][1]/self.gpuclkdiv))
 
     @pyqtSlot(str)
     def toggleCPU(self, cpu):
@@ -381,7 +453,7 @@ class IntelPowerControl(QWidget):
                 self.status.showMessage(str(err.output).strip())
                 return
             
-        self.gpus[str(gpu)][1][0].setText("%d MHz" % (val*self.gpuclkdiv))
+        self.gpulabels[str(gpu)][1][0].setText("%d MHz" % (val*self.gpuclkdiv))
         
     @pyqtSlot(str)
     def setMaximumClock(self, gpu):
@@ -397,7 +469,7 @@ class IntelPowerControl(QWidget):
             if err.returncode != 0:
                 self.status.showMessage(str(err.output).strip())
                 return
-        self.gpus[str(gpu)][2][0].setText("%d MHz" % (val*self.gpuclkdiv))
+        self.gpulabels[str(gpu)][2][0].setText("%d MHz" % (val*self.gpuclkdiv))
 
     @staticmethod
     def readValue(fn):
@@ -409,6 +481,14 @@ class IntelPowerControl(QWidget):
         except: pass
         return ret.strip()
 
+def getDataFile(fn):
+    datapaths = [ '/usr/local/share', '/usr/share' ]
+    for p in datapaths:
+        path = os.path.join( p,QApplication.applicationName(),fn)
+        if os.path.exists( path):
+            return path
+    return fn
+
 def main():
     import signal
     signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -416,6 +496,7 @@ def main():
     a = QApplication(sys.argv)
     a.setOrganizationName("mechnich")
     a.setApplicationName( "intel-power-control")
+    a.setWindowIcon(QIcon(getDataFile("Intel-logo.png")))
     i = IntelPowerControl()
     i.show()
     return a.exec_()
