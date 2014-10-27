@@ -1,7 +1,7 @@
 intel-power-control
 ===================
 
-GPU power management for Intel hardware
+GPU power management for Intel hardware on Linux
 
 # Functionality
 - Displays cpu online states, temperatures and gpu clock settings.
