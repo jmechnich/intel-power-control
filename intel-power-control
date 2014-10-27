@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8; mode: python -*-
-import os, re, sip, subprocess, sys
+import argparse, os, re, sip, subprocess, sys
 
 from PyQt5.Qt import *
 
@@ -46,6 +46,11 @@ class IntelPowerControl(QWidget):
         self.timer.setInterval( self.update_interval)
         self.timer.timeout.connect( self.updateAll)
         self.timer.start()
+        if self.showsystray.isChecked():
+            self.systrayTimer = QTimer()
+            self.systrayTimer.setInterval( 1000)
+            self.systrayTimer.timeout.connect( self.checkSystray)
+            self.systrayTimer.start()
         self.setFixedSize( self.sizeHint())
         d = QApplication.desktop()
         screen = -1
@@ -60,6 +65,17 @@ class IntelPowerControl(QWidget):
         if not self.suidhelper:
             self.status.showMessage(
                 "Could not find suid helper, disabling inputs")
+        if not (self.starthidden.isEnabled() and self.starthidden.isChecked()):
+            self.show()
+    
+    def checkSystray(self):
+        if self.systray:
+            self.systrayTimer.stop()
+            self.systrayTimer = None
+            return
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return
+        self.createSystray()
 
     def closeEvent(self,ev):
         if self.systray and self.minimizetray.isChecked():
@@ -191,48 +207,44 @@ class IntelPowerControl(QWidget):
         row = 0
         layout.addWidget( QLabel("Throttle GPU"), row, 0)
         self.throttlegpu = QCheckBox()
-        self.throttlegpu.toggled.connect( self.toggleThrottling)
         if not self.suidhelper: self.throttlegpu.setDisabled(True)
         layout.addWidget( self.throttlegpu, row, 1)
         row += 1
         layout.addWidget( QLabel("Max. Temperature"), row, 0)
         self.maxtemp = QSpinBox()
         self.maxtemp.setRange(50, 100)
-        self.maxtemp.valueChanged.connect( self.setMaxTemp)
         if not self.suidhelper: self.maxtemp.setDisabled(True)
         layout.addWidget(self.maxtemp, row, 1)
         row += 1
         layout.addWidget( QLabel("Hysteresis"), row, 0)
         self.hyst = QSpinBox()
         self.hyst.setRange(-20, 0)
-        self.hyst.valueChanged.connect( self.setHyst)
         if not self.suidhelper: self.hyst.setDisabled(True)
         layout.addWidget(self.hyst, row, 1)
         row += 1
         self.tz = QComboBox()
         self.tz.addItems( sorted(self.thermals.keys()))
-        self.tz.currentIndexChanged.connect( self.setActiveThermal)
         if not self.suidhelper: self.tz.setDisabled(True)
         layout.addWidget( QLabel("Thermal"), row, 0)
         layout.addWidget( self.tz, row, 1)
         row+=1
         layout.addWidget( QLabel("Always On Top"), row, 0)
         self.alwaysontop = QCheckBox()
-        self.alwaysontop.stateChanged.connect( self.toggleAlwaysOnTop)
         layout.addWidget(self.alwaysontop, row, 1)
         row+=1
         layout.addWidget( QLabel("Show Systray Icon"), row, 0)
         self.showsystray = QCheckBox()
-        self.showsystray.stateChanged.connect( self.toggleSystray)
         layout.addWidget(self.showsystray, row, 1)
         row+=1
-        layout.addWidget( QLabel("Minimize to tray"), row, 0)
+        layout.addWidget( QLabel("Minimize To Tray"), row, 0)
         self.minimizetray = QCheckBox()
         self.minimizetray.setEnabled(self.showsystray.isChecked())
-        self.minimizetray.stateChanged.connect(
-            lambda x: self.updateSettings('minimizetray', int(x)))
-        self.showsystray.stateChanged.connect( self.minimizetray.setEnabled)
         layout.addWidget(self.minimizetray, row, 1)
+        row+=1
+        layout.addWidget( QLabel("Start Hidden"), row, 0)
+        self.starthidden = QCheckBox()
+        self.starthidden.setEnabled(self.showsystray.isChecked())
+        layout.addWidget(self.starthidden, row, 1)
         
         layout.setColumnStretch( row, 1)
         box.setLayout(layout)
@@ -240,6 +252,17 @@ class IntelPowerControl(QWidget):
         self.status = QStatusBar(self)
         self.layout.addWidget(self.status)
         self.loadSettings()
+        
+        self.throttlegpu.toggled.connect( self.toggleThrottling)
+        self.maxtemp.valueChanged.connect( self.setMaxTemp)
+        self.hyst.valueChanged.connect( self.setHyst)
+        self.tz.currentIndexChanged.connect( self.setActiveThermal)
+        self.alwaysontop.stateChanged.connect( self.toggleAlwaysOnTop)
+        self.showsystray.stateChanged.connect( self.toggleSystray)
+        self.minimizetray.stateChanged.connect(
+            lambda x: self.updateSettings('minimizetray', int(x)))
+        self.starthidden.stateChanged.connect(
+            lambda x: self.updateSettings('starthidden', int(x)))
 
     def updateSettings(self,name,state):
         s = QSettings()
@@ -257,33 +280,52 @@ class IntelPowerControl(QWidget):
         if not hidden: self.show()
         s = QSettings()
         s.setValue( "alwaysontop", int(state))
+    
+    def createSystray(self):
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return
+        if self.systray:
+            self.destroySystray()
+        self.systray = QSystemTrayIcon()
+        pix = QPixmap(22,22)
+        pix.fill(Qt.transparent)
+        self.systray.setIcon(QIcon(pix))
+        self.systray.activated.connect( self.systrayActivated)
+        m = QMenu()
+        m.addAction("Quit", QApplication.quit)
+        self.systray.setContextMenu(m)
+        self.systray.show()
+        self.systrayCycle = 0
+
+    def destroySystray(self):
+        if not self.systray:
+            return
+        sip.delete(self.systray)
+        self.systray = None
 
     def toggleSystray(self,state):
         self.showsystray.setChecked(state)
-        if state and not self.systray:
-            self.systray = QSystemTrayIcon(self)
-            pix = QPixmap(22,22)
-            pix.fill(Qt.transparent)
-            self.systray.setIcon(QIcon(pix))
-            self.systray.activated.connect( self.systrayActivated)
-            m = QMenu()
-            m.addAction("Quit", QApplication.quit)
-            self.systray.setContextMenu(m)
-            self.systray.show()
-            self.systrayCycle = 0
-        elif not state and self.systray:
-            sip.delete(self.systray)
-            self.systray = None
+        self.minimizetray.setEnabled(state)
+        self.starthidden.setEnabled(state)
+        if state:
+            self.createSystray()
+        else:
+            self.destroySystray()
         s = QSettings()
         s.setValue( "systray", int(state))
 
     def systrayActivated(self,reason):
         if reason == QSystemTrayIcon.Trigger:
-            self.show()
+            if self.isHidden():
+                self.show()
+            else:
+                self.hide()
     
     def loadSettings(self):
         self.status.showMessage("Loading settings", self.msgtimeout)
         s = QSettings()
+        self.fgColor = QColor(s.value("fgColor", QColor("#33b0dc")))
+        self.bgColor = QColor(s.value("bgColor", QColor("#144556")))
         self.setMaxTemp( int(s.value("maxtemp", 80)))
         self.setHyst(    int(s.value("hyst",     -5)))
         self.toggleThrottling( int(s.value("throttlegpu",  1)))
@@ -291,8 +333,7 @@ class IntelPowerControl(QWidget):
         self.toggleAlwaysOnTop( int(s.value("alwaysontop", 0)))
         self.toggleSystray( int(s.value("systray", 0)))
         self.minimizetray.setChecked( int(s.value("minimizetray", 0)))
-        self.fgColor = QColor(s.value("fgColor", QColor("#33b0dc")))
-        self.bgColor = QColor(s.value("bgColor", QColor("#144556")))
+        self.starthidden.setChecked( int(s.value("starthidden", 0)))
         
     def setMaxTemp(self,newmax):
         self.maxtemp.setValue(newmax)
@@ -338,6 +379,7 @@ class IntelPowerControl(QWidget):
 
     def updateSystray(self):
         if not self.systray: return
+        self.systray.show()
         pix = QPixmap(22,22)
         pix.fill( self.bgColor)
         p = QPainter(pix)
@@ -436,7 +478,7 @@ class IntelPowerControl(QWidget):
         self.counter = (self.counter + 1)%self.max_count
         if self.counter == 0:
             self.avgtemp = float(self.sumtemp) / self.max_count
-            #print "Average temperature:", self.avgtemp
+            #print ("Average temperature:", self.avgtemp)
             self.sumtemp = 0.
         
     def updateGUI(self):
@@ -533,16 +575,70 @@ def getDataFile(fn):
             return path
     return fn
 
+def detach():
+    stdin  = '/dev/null'
+    stdout = '/dev/null'
+    stderr = '/dev/null'
+    
+    try:
+        pid = os.fork()
+        if pid > 0:
+            # exit first parent
+            sys.exit(0)
+    except OSError as e:
+        sys.stderr.write("fork #1 failed: %d (%s)\n" % (e.errno, e.strerror))
+        sys.exit(1)
+        
+    # decouple from parent environment
+    os.chdir("/")
+    os.setsid()
+    os.umask(0)
+        
+    # do second fork
+    try:
+        pid = os.fork()
+        if pid > 0:
+            # exit from second parent
+            sys.exit(0)
+    except OSError as e:
+        sys.stderr.write("fork #2 failed: %d (%s)\n" % (e.errno, e.strerror))
+        sys.exit(1)
+        
+    # redirect standard file descriptors
+    sys.stdout.flush()
+    sys.stderr.flush()
+    si = open(stdin, 'r')
+    so = open(stdout, 'a+')
+    se = open(stderr, 'a+')
+    os.dup2(si.fileno(), sys.stdin.fileno())
+    os.dup2(so.fileno(), sys.stdout.fileno())
+    os.dup2(se.fileno(), sys.stderr.fileno())
+
+def parseCommandLine():
+    ret = {}
+    parser = argparse.ArgumentParser(
+        description='intel-power-control')
+    parser.add_argument( '-d', '--daemon',
+                         help='run as daemon', action="store_true")
+    args = parser.parse_args()
+    
+    # detach immediately if run as daemon
+    if args.daemon: detach()
+    
+    ret['daemon'] = args.daemon
+
+    return ret
+
 def main():
     import signal
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
+    argdict = parseCommandLine()
     a = QApplication(sys.argv)
     a.setOrganizationName("mechnich")
     a.setApplicationName( "intel-power-control")
     a.setWindowIcon(QIcon(getDataFile("Intel-logo.png")))
     i = IntelPowerControl()
-    i.show()
     return a.exec_()
 
 if __name__ == "__main__":
