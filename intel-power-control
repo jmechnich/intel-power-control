@@ -130,7 +130,7 @@ class IntelPowerControl(QWidget):
         self.gpulabels = {}
         self.gpusliders = {}
         gpulabels = [ g for g in os.listdir(self.gpubasepath)
-                 if re.match( r'^card\d$', g) ]
+                      if re.match( r'^card\d$', g) ]
         self.gpuminmapper = QSignalMapper()
         self.gpumaxmapper = QSignalMapper()
         layout.addWidget(QLabel("Current"), 0, 1)
@@ -138,6 +138,19 @@ class IntelPowerControl(QWidget):
         layout.addWidget(QLabel("Maximum"), 0, 3)
         i = 1
         for t in sorted(gpulabels):
+            dirname = os.path.join(self.gpubasepath,t)
+            # check if card vendor is Intel
+            with open( os.path.join( dirname, 'device', 'vendor')) as f:
+                vendor = f.readline().strip()
+            if vendor != '0x8086':
+                continue
+            # check for minimal control file availability
+            if not os.path.exists(os.path.join(dirname, 'gt_cur_freq_mhz')):
+                continue
+            if not os.path.exists(os.path.join(dirname, 'gt_max_freq_mhz')):
+                continue
+            if not os.path.exists(os.path.join(dirname, 'gt_min_freq_mhz')):
+                continue
             layout.addWidget(QLabel(t),i,0)
             l0 = QLabel("0 MHz")
             layout.addWidget(l0,i,1)
@@ -146,7 +159,7 @@ class IntelPowerControl(QWidget):
             l2 = QLabel("0 MHz")
             layout.addWidget(l2,i,3)
             self.gpulabels[t] = ( (l0,0), (l1,0), (l2,0))
-            gts = [ g for g in os.listdir(os.path.join(self.gpubasepath,t))
+            gts = [ g for g in os.listdir(dirname)
                     if g.startswith( 'gt_RP') ]
             if not len(gts):
                 continue
@@ -155,7 +168,7 @@ class IntelPowerControl(QWidget):
             for g in gts:
                 state = re.match(r'gt_(RP[n\d])_freq_mhz', g).groups()[0]
                 states[state] = self.readValue(
-                    os.path.join(self.gpubasepath,t,g))
+                    os.path.join(dirname,g))
             rps = sorted(states.keys())
             rps_max = int(states[rps[0]])
             rps_min = int(states[rps[-1]])
