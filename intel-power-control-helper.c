@@ -5,6 +5,7 @@
 
 const char* drmbasepath = "/sys/class/drm";
 const char* cpubasepath = "/sys/devices/system/cpu";
+const char* backlightpath = "/sys/class/backlight/intel_backlight";
 
 int toggleCPU( const char* cpu)
 {
@@ -80,14 +81,43 @@ int setMHz( const char* gpu, const char* fn, const char* val)
   return 0;
 }
 
+int setBrightness( const char* val)
+{
+  const char* fn = "brightness";
+  size_t buflen = strlen(backlightpath) + strlen(fn) + 2;
+  char* buf = calloc( sizeof(char), buflen);
+  snprintf( buf, buflen, "%s/%s", backlightpath, fn);
+  FILE* f = fopen( buf, "w");
+  if( !f)
+  {
+    printf( "Could not open '%s'\n", buf);
+    free( buf);
+    return 1;
+  }
+
+  size_t written = fwrite( val, sizeof(char), strlen(val), f);
+
+  fclose( f);
+  free( buf);
+
+  if( written != strlen(val))
+  {
+    printf( "Error writing %lu bytes to file, got %lu\n", strlen(val), written);
+    return 1;
+  }
+
+  return 0;
+}
+
 void help()
 {
   printf("usage: intel-power-manager-helper options\n");
-  printf("  -h  --help  print this text and exit\n");
-  printf("  -c  --cpu   toggle CPU state\n");
-  printf("  -g  --gpu   select GPU\n");
-  printf("  -l  --min   set minimum GPU clock (requires -g)\n");
-  printf("  -u  --max   set maximum GPU clock (requires -g)\n");
+  printf("  -h  --help          print this text and exit\n");
+  printf("  -c  --cpu N         toggle CPU state for CPU N\n");
+  printf("  -g  --gpu N         select GPU N\n");
+  printf("  -l  --min N         set minimum GPU clock to N (requires -g)\n");
+  printf("  -u  --max N         set maximum GPU clock to N (requires -g)\n");
+  printf("  -b  --brightness N  set brightness to N\n");
 }
 int main( int argc, char** argv)
 {
@@ -95,11 +125,12 @@ int main( int argc, char** argv)
   const char* maxfn = "gt_max_freq_mhz";
   
   const size_t bufsize = 10;
-  char cpu[bufsize+1], gpu[bufsize+1], min[bufsize+1], max[bufsize+1];
+  char cpu[bufsize+1], gpu[bufsize+1], min[bufsize+1], max[bufsize+1], bn[bufsize+1];
   memset( cpu, 0, bufsize+1);
   memset( gpu, 0, bufsize+1);
   memset( min, 0, bufsize+1);
   memset( max, 0, bufsize+1);
+  memset( bn,  0, bufsize+1);
   
   int c;
   while (1)
@@ -112,12 +143,13 @@ int main( int argc, char** argv)
             {"gpu", required_argument, 0, 'g'},
             {"min", required_argument, 0, 'l'},
             {"max", required_argument, 0, 'u'},
+            {"brightness", required_argument, 0, 'b'},
             {"help", no_argument, 0, 'h'},
             {0, 0, 0, 0}
         };
     /* getopt_long stores the option index here. */
     int option_index = 0;
-    c = getopt_long (argc, argv, "l:u:g:c:h",
+    c = getopt_long (argc, argv, "l:u:g:c:b:h",
                      long_options, &option_index);
     
     /* Detect the end of the options. */
@@ -162,6 +194,13 @@ int main( int argc, char** argv)
       }
       strncpy(max, optarg, bufsize);
       if( setMHz( gpu, maxfn, max) != 0) abort();
+      break;
+    case 'b':
+#ifdef DEBUG
+      printf("set brightness: %s\n", optarg);
+#endif
+      strncpy(bn, optarg, bufsize);
+      if( setBrightness(bn) != 0) abort();
       break;
     case 'h':
       help();

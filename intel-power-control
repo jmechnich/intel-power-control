@@ -26,6 +26,7 @@ class IntelPowerControl(QWidget):
     cpubasepath     = '/sys/devices/system/cpu'
     thermalbasepath = '/sys/class/thermal'
     gpubasepath     = '/sys/class/drm'
+    backlightpath   = '/sys/class/backlight/intel_backlight'
     gpuclkdiv       = 50
     suidhelper      = which( 'intel-power-control-helper')
     msgtimeout      = 2000
@@ -38,7 +39,8 @@ class IntelPowerControl(QWidget):
         self.initCPUs()
         self.initThermals()
         self.initGPUs()
-        self.initControls()
+        self.initBrightness()
+        self.initOptions()
         self.layout.addStretch()
         self.setLayout(self.layout)
         self.updateAll()
@@ -210,12 +212,47 @@ class IntelPowerControl(QWidget):
         box.setLayout(layout)
         self.layout.addWidget(box)
 
-    def initControls(self):
+    def brightnessAvailable(self):
+        if not os.path.exists(self.backlightpath):
+                return False
+        if not os.path.exists(os.path.join(self.backlightpath, "brightness")):
+                return False
+        if not os.path.exists(os.path.join(self.backlightpath, "max_brightness")):
+                return False
+        return True
+    
+    def setBrightness(self):
+        if not self.brightnessAvailable():
+            return
+        
+
+    def initBrightness(self):
+        if not self.brightnessAvailable():
+            return
+        brightmax = self.readValue(os.path.join(self.backlightpath, "max_brightness"))
+        box = QGroupBox("Brightness")
+        layout = QGridLayout()
+        self.bnslider = QSlider(Qt.Horizontal)
+        if len(brightmax):
+            self.bnslider.setRange( 0, int(brightmax)/100)
+        else:
+            self.bnslider.setRange( 0, 1)
+            self.bnslider.setDisabled( True)
+        self.bnslider.setTickPosition(QSlider.TicksBelow)
+        self.bnslider.setTickInterval(1)
+        self.bnslider.setPageStep(1)
+        self.bnslider.valueChanged.connect(self.setBrightness)
+        if not self.suidhelper: self.bnslider.setDisabled(True)
+        layout.addWidget(self.bnslider,0, 1, 1, 3)
+        box.setLayout(layout)
+        self.layout.addWidget(box)
+        
+    def initOptions(self):
         self.counter = 0
         self.avgtemp = 0.
         self.sumtemp = 0.
         self.max_count = 5
-        box = QGroupBox("Controls")
+        box = QGroupBox("Options")
         layout = QGridLayout()
         row = 0
         layout.addWidget( QLabel("Throttle GPU"), row, 0)
@@ -493,6 +530,15 @@ class IntelPowerControl(QWidget):
             self.avgtemp = float(self.sumtemp) / self.max_count
             #print ("Average temperature:", self.avgtemp)
             self.sumtemp = 0.
+        # brightness
+        bn = self.readValue( os.path.join(self.backlightpath,'brightness'))
+        if len(bn):
+            bnint = int(bn)/100
+            if self.bnslider.value() != bnint:
+                tstate = self.bnslider.hasTracking()
+                self.bnslider.setTracking(False)
+                self.bnslider.setSliderPosition(bnint)
+                self.bnslider.setTracking(tstate)
         
     def updateGUI(self):
         # cpus
@@ -570,6 +616,19 @@ class IntelPowerControl(QWidget):
                 return
         self.gpulabels[str(gpu)][2][0].setText("%d MHz" % (val*self.gpuclkdiv))
 
+    @pyqtSlot(str)
+    def setBrightness(self):
+        if not self.suidhelper: return
+        val = self.bnslider.value()*100
+        args = [self.suidhelper, "-b", str(val)]
+        print(args)
+        try:
+            subprocess.check_output(args)
+        except subprocess.CalledProcessError as err:
+            if err.returncode != 0:
+                self.status.showMessage(str(err.output).strip())
+                return
+            
     @staticmethod
     def readValue(fn):
         ret = ''
