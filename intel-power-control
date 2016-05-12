@@ -616,7 +616,7 @@ class IntelPowerControl(QWidget):
                 return
         self.gpulabels[str(gpu)][2][0].setText("%d MHz" % (val*self.gpuclkdiv))
 
-    @pyqtSlot(str)
+    @pyqtSlot()
     def setBrightness(self):
         if not self.suidhelper: return
         val = self.bnslider.value()*100
