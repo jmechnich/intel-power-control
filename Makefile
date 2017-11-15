@@ -1,4 +1,4 @@
-CFLAGS=-Wall #-DDEBUG
+override CFLAGS += -Wall #-DDEBUG
 
 TARGET=intel-power-control
 HELPER=$(TARGET)-helper
