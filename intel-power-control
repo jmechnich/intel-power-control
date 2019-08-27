@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3 -u
 # -*- coding: utf-8; mode: python -*-
 import argparse, os, re, sip, subprocess, sys
 from enum import IntEnum
