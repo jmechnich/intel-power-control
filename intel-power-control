@@ -75,10 +75,10 @@ class IntelPowerControl(QWidget):
         #    if pri > -1: screens.remove(pri)
         #    screen  = screens[0]
         sr = d.availableGeometry(screen)
-        self.move( sr.center()-QPoint(self.width()/2,self.height()/2))
+        self.move(sr.center()-QPoint(int(self.width()/2),int(self.height()/2)))
         if not self.suidhelper:
             self.status.showMessage(
-                "Could not find suid helper, disabling inputs")
+                "Could not find suid helper, disabling sliders")
         if not (self.starthidden.isEnabled() and self.starthidden.isChecked()):
             self.show()
     
@@ -265,7 +265,7 @@ class IntelPowerControl(QWidget):
         layout = QGridLayout()
         self.bnslider = QSlider(Qt.Horizontal)
         if len(brightmax):
-            self.bnslider.setRange( 0, int(brightmax)/100)
+            self.bnslider.setRange( 0, int(int(brightmax)/100))
         else:
             self.bnslider.setRange( 0, 1)
             self.bnslider.setDisabled( True)
@@ -524,7 +524,7 @@ class IntelPowerControl(QWidget):
                         changed = True
                 if changed:        
                     self.status.showMessage(
-                        u"Decreasing GPU clocks: %.1f°C > %d°C" %
+                        "Decreasing GPU clocks: %.1f°C > %d°C" %
                         (self.avgtemp,maxtemp), self.msgtimeout)
             elif self.avgtemp < (maxtemp+hyst):
                 for k,v in self.gpusliders.items():
@@ -534,7 +534,7 @@ class IntelPowerControl(QWidget):
                         changed = True
                 if changed:
                     self.status.showMessage(
-                        u"Increasing GPU clocks: %.1f°C < %d°C" %
+                        "Increasing GPU clocks: %.1f°C < %d°C" %
                         (self.avgtemp,maxtemp+hyst), self.msgtimeout)
         
     def updateValues(self):
@@ -582,7 +582,7 @@ class IntelPowerControl(QWidget):
         # brightness
         bn = self.readValue( os.path.join(self.backlightpath,'brightness'))
         if len(bn):
-            bnint = int(bn)/100
+            bnint = int(int(bn)/100)
             if self.bnslider.value() != bnint:
                 tstate = self.bnslider.hasTracking()
                 self.bnslider.setTracking(False)
@@ -617,19 +617,29 @@ class IntelPowerControl(QWidget):
             v[Vars.BST].setValue( int(self.gpulabels[k][Cols.BST][1]/
                                       self.gpuclkdiv))
 
+    def callHelper(self, args):
+        args = [ self.suidhelper ] + args
+        ret = subprocess.run(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if ret.returncode != 0:
+            self.status.showMessage(ret.stdout)
+            return None
+        return ret    
+
     @pyqtSlot(str)
     def toggleCPU(self, cpu):
         if not self.suidhelper: return
         btn, val = self.cpulabels[str(cpu)]
         newval = 'red' if val == 'green' else 'green'
         self.cpulabels[str(cpu)] = (btn, newval)
-        try:
-            subprocess.check_output([self.suidhelper, "-c", cpu],universal_newlines=True)
-        except subprocess.CalledProcessError as err:
-            if err.returncode != 0:
-                self.status.showMessage(str(err.output).strip())
-                return
-                
+
+        if self.callHelper([ "-c", cpu ]) is None:
+            return
+
         btn.setStyleSheet(
             'QPushButton {color: white; background-color: %s}' % newval)
         self.status.showMessage(
@@ -639,17 +649,14 @@ class IntelPowerControl(QWidget):
     def setMinimumClock(self, gpu):
         if not self.suidhelper: return
         val = self.gpusliders[str(gpu)][Vars.MIN].value()
-        args = [self.suidhelper, "-g", gpu, "-l", str(val*self.gpuclkdiv)]
+        args = [ "-g", gpu, "-l", str(val*self.gpuclkdiv) ]
         if val > self.gpusliders[str(gpu)][Vars.MAX].value():
             self.gpusliders[str(gpu)][Vars.MAX].setValue(val)
             args += [ "-u", str(val*self.gpuclkdiv)]
-        try:
-            subprocess.check_output(args)
-        except subprocess.CalledProcessError as err:
-            if err.returncode != 0:
-                self.status.showMessage(str(err.output).strip())
-                return
-            
+
+        if self.callHelper(args) is None:
+            return
+
         self.gpulabels[str(gpu)][Cols.MIN][0].setText(
             "%d MHz" % (val*self.gpuclkdiv))
         
@@ -657,16 +664,14 @@ class IntelPowerControl(QWidget):
     def setMaximumClock(self, gpu):
         if not self.suidhelper: return
         val = self.gpusliders[str(gpu)][Vars.MAX].value()
-        args = [self.suidhelper, "-g", gpu, "-u", str(val*self.gpuclkdiv)]
+        args = [ "-g", gpu, "-u", str(val*self.gpuclkdiv) ]
         if val < self.gpusliders[str(gpu)][Vars.MIN].value():
             self.gpusliders[str(gpu)][Vars.MIN].setValue(val)
             args += [ "-l", str(val*self.gpuclkdiv)]
-        try:
-            subprocess.check_output(args)
-        except subprocess.CalledProcessError as err:
-            if err.returncode != 0:
-                self.status.showMessage(str(err.output).strip())
-                return
+
+        if self.callHelper(args) is None:
+            return
+
         self.gpulabels[str(gpu)][Cols.MAX][0].setText(
             "%d MHz" % (val*self.gpuclkdiv))
         if self.syncboosttomax.isChecked():
@@ -677,16 +682,14 @@ class IntelPowerControl(QWidget):
     def setBoostClock(self, gpu):
         if not self.suidhelper: return
         val = self.gpusliders[str(gpu)][Vars.BST].value()
-        args = [self.suidhelper, "-g", gpu, "-s", str(val*self.gpuclkdiv)]
+        args = [ "-g", gpu, "-s", str(val*self.gpuclkdiv) ]
         if val < self.gpusliders[str(gpu)][Vars.MIN].value():
             self.gpusliders[str(gpu)][Vars.MIN].setValue(val)
             args += [ "-l", str(val*self.gpuclkdiv)]
-        try:
-            subprocess.check_output(args)
-        except subprocess.CalledProcessError as err:
-            if err.returncode != 0:
-                self.status.showMessage(str(err.output).strip())
-                return
+
+        if self.callHelper(args) is None:
+            return
+
         self.gpulabels[str(gpu)][Cols.BST][0].setText(
             "%d MHz" % (val*self.gpuclkdiv))
         
@@ -694,15 +697,8 @@ class IntelPowerControl(QWidget):
     def setBrightness(self):
         if not self.suidhelper: return
         val = self.bnslider.value()*100
-        args = [self.suidhelper, "-b", str(val)]
-        print(args)
-        try:
-            subprocess.check_output(args)
-        except subprocess.CalledProcessError as err:
-            if err.returncode != 0:
-                self.status.showMessage(str(err.output).strip())
-                return
-            
+        self.callHelper([ "-b", str(val) ])
+        
     @staticmethod
     def readValue(fn):
         ret = ''
@@ -713,11 +709,11 @@ class IntelPowerControl(QWidget):
         except: pass
         return ret.strip()
 
-def getDataFile(fn):
+def getDataFile(fn, subdir=""):
     datapaths = [ '/usr/local/share', '/usr/share' ]
     for p in datapaths:
-        path = os.path.join( p,QApplication.applicationName(),fn)
-        if os.path.exists( path):
+        path = os.path.join(p, subdir, fn)
+        if os.path.exists(path):
             return path
     return fn
 
@@ -766,6 +762,8 @@ def parseCommandLine():
         description='intel-power-control')
     parser.add_argument( '-d', '--daemon',
                          help='run as daemon', action="store_true")
+    parser.add_argument( '-style',
+                         help='set Qt style')
     args = parser.parse_args()
     
     # detach immediately if run as daemon
@@ -783,7 +781,7 @@ def main():
     a = QApplication(sys.argv)
     a.setOrganizationName("mechnich")
     a.setApplicationName( "intel-power-control")
-    a.setWindowIcon(QIcon(getDataFile("Intel-logo.png")))
+    a.setWindowIcon(QIcon(getDataFile("intel-power-control.png", subdir="icons")))
     i = IntelPowerControl()
     return a.exec_()
 
