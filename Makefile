@@ -1,12 +1,12 @@
 override CFLAGS += -Wall #-DDEBUG
 
-TARGET=intel-power-control
-HELPER=$(TARGET)-helper
+TARGET = intel-power-control
+HELPER = $(TARGET)-helper
 
-PREFIX=/usr/local
-BINDIR=$(PREFIX)/bin
-DATADIR=$(PREFIX)/share/$(TARGET)
-DATA=Intel-logo.png
+PREFIX ?= /usr/local
+BINDIR  = $(PREFIX)/bin
+DATADIR = $(PREFIX)/share/$(TARGET)
+DATA    = intel-power-control.png
 
 all: $(HELPER)
 

@@ -17,11 +17,16 @@ GPU power management for Intel hardware on Linux
 # Installation
     git clone https://github.com/jmechnich/intel-power-control.git
     
-    # compile and install
+    # compile
     cd intel-power-control
     make
+
+    # install to /usr/local
     sudo make install
-    
+
+    # OR install to local prefix
+    make install PREFIX=$HOME/.local
+
     # run program
     intel-power-control
 
