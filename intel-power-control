@@ -103,7 +103,7 @@ class IntelPowerControl(QWidget):
         layout = QHBoxLayout()
         self.cpulabels = {}
         cpus = [ c for c in os.listdir(self.cpubasepath)
-                 if re.match( r'^cpu\d$', c) ]
+                 if re.match( r'^cpu\d+$', c) ]
         self.cpumapper = QSignalMapper()
         for i in sorted(cpus):
             l = QPushButton(i)
