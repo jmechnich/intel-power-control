@@ -105,7 +105,7 @@ class IntelPowerControl(QWidget):
         cpus = [ c for c in os.listdir(self.cpubasepath)
                  if re.match( r'^cpu\d+$', c) ]
         self.cpumapper = QSignalMapper()
-        for i in sorted(cpus):
+        for i in natural_sort(cpus):
             l = QPushButton(i)
             if not self.suidhelper: l.setDisabled(True)
             self.cpumapper.setMapping( l, i)
@@ -708,6 +708,11 @@ class IntelPowerControl(QWidget):
             f.close()
         except: pass
         return ret.strip()
+
+def natural_sort(l): 
+    convert = lambda text: int(text) if text.isdigit() else text.lower()
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
+    return sorted(l, key=alphanum_key)
 
 def getDataFile(fn, subdir=""):
     datapaths = [ '/usr/local/share', '/usr/share' ]
