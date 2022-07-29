@@ -1,6 +1,13 @@
-#!/usr/bin/python3 -u
+#!/usr/bin/env python3
 # -*- coding: utf-8; mode: python -*-
-import argparse, os, re, sip, subprocess, sys
+
+import argparse
+import os
+import re
+import sip
+import subprocess
+import sys
+
 from enum import IntEnum
 
 from PyQt5.Qt import *
@@ -40,11 +47,12 @@ class IntelPowerControl(QWidget):
     gpubasepath     = '/sys/class/drm'
     backlightpath   = '/sys/class/backlight/intel_backlight'
     gpuclkdiv       = 50
-    suidhelper      = which('intel-power-control-helper')
+    suidhelper      = None
     msgtimeout      = 2000
-    
+
     def __init__(self,parent=None):
         super(IntelPowerControl,self).__init__(parent)
+        self.checkHelper()
         self.systray = None
         self.systrayCycle = 0
         self.layout = QVBoxLayout()
@@ -57,15 +65,15 @@ class IntelPowerControl(QWidget):
         self.setLayout(self.layout)
         self.updateAll()
         self.timer = QTimer()
-        self.timer.setInterval( self.update_interval)
-        self.timer.timeout.connect( self.updateAll)
+        self.timer.setInterval(self.update_interval)
+        self.timer.timeout.connect(self.updateAll)
         self.timer.start()
         if self.showsystray.isChecked():
             self.systrayTimer = QTimer()
-            self.systrayTimer.setInterval( 1000)
-            self.systrayTimer.timeout.connect( self.checkSystray)
+            self.systrayTimer.setInterval(1000)
+            self.systrayTimer.timeout.connect(self.checkSystray)
             self.systrayTimer.start()
-        self.setFixedSize( self.sizeHint())
+        self.setFixedSize(self.sizeHint())
         d = QApplication.desktop()
         screen = -1
         #nscreens = d.screenCount()
@@ -81,7 +89,24 @@ class IntelPowerControl(QWidget):
                 "Could not find suid helper, disabling sliders")
         if not (self.starthidden.isEnabled() and self.starthidden.isChecked()):
             self.show()
-    
+
+    def checkHelper(self):
+        suidhelper = which('intel-power-control-helper')
+        if not suidhelper:
+            return
+
+        for args in [
+                [ suidhelper ],
+                [ '/usr/bin/sudo', '-n', suidhelper ],
+        ]:
+            ret = subprocess.run(args, capture_output=True)
+            if ret.returncode == 0:
+                self.suidhelper = args
+                return
+
+        print(f'suidhelper was found at {suidhelper} but cannot be executed'
+              ' with root privileges. Either add a sudo rule or set SUID bit.')
+
     def checkSystray(self):
         if self.systray:
             self.systrayTimer.stop()
@@ -97,19 +122,20 @@ class IntelPowerControl(QWidget):
             self.hide()
         else:
             ev.accept()
-        
+
     def initCPUs(self):
         box = QGroupBox("CPU State")
         layout = QHBoxLayout()
         self.cpulabels = {}
         cpus = [ c for c in os.listdir(self.cpubasepath)
-                 if re.match( r'^cpu\d+$', c) ]
+                 if re.match(r'^cpu\d+$', c) ]
         self.cpumapper = QSignalMapper()
         for i in natural_sort(cpus):
             l = QPushButton(i)
-            if not self.suidhelper: l.setDisabled(True)
-            self.cpumapper.setMapping( l, i)
-            l.clicked.connect( self.cpumapper.map)
+            if not self.suidhelper:
+                l.setDisabled(True)
+            self.cpumapper.setMapping(l, i)
+            l.clicked.connect(self.cpumapper.map)
             layout.addWidget(l)
             self.cpulabels[i] = (l, 'green')
         self.cpumapper.mapped['QString'].connect(self.toggleCPU)
@@ -126,25 +152,25 @@ class IntelPowerControl(QWidget):
         layout.addWidget(QLabel("Type"), 0, 2)
         i = 1
         for t in sorted(thermals):
-            layout.addWidget( QLabel(t), i, 0)
+            layout.addWidget(QLabel(t), i, 0)
             tlabel = QLabel(u"0°C")
-            layout.addWidget( tlabel, i, 1)
+            layout.addWidget(tlabel, i, 1)
             typename = self.readValue(
                 os.path.join(self.thermalbasepath,t,'type'))
-            layout.addWidget( QLabel(typename), i, 2)
+            layout.addWidget(QLabel(typename), i, 2)
             self.thermals[t] = (tlabel, 0, typename)
             i+=1
         layout.setColumnStretch(2,1)
         box.setLayout(layout)
         self.layout.addWidget(box)
-            
+
     def initGPUs(self):
         box = QGroupBox("GPU Clock")
         layout = QGridLayout()
         self.gpulabels = {}
         self.gpusliders = {}
         gpulabels = [ g for g in os.listdir(self.gpubasepath)
-                      if re.match( r'^card\d$', g) ]
+                      if re.match(r'^card\d$', g) ]
         self.gpuminmapper = QSignalMapper()
         self.gpumaxmapper = QSignalMapper()
         self.gpuboostmapper = QSignalMapper()
@@ -156,7 +182,7 @@ class IntelPowerControl(QWidget):
         for card in sorted(gpulabels):
             dirname = os.path.join(self.gpubasepath,card)
             # check if card vendor is Intel
-            with open( os.path.join( dirname, 'device', 'vendor')) as f:
+            with open(os.path.join(dirname, 'device', 'vendor')) as f:
                 vendor = f.readline().strip()
             if vendor != '0x8086':
                 continue
@@ -178,12 +204,12 @@ class IntelPowerControl(QWidget):
             layout.addWidget(l2,row,Cols.MAX+1)
             l3 = QLabel("0 MHz")
             layout.addWidget(l3,row,Cols.BST+1)
-            self.gpulabels[card] = ( (l0,0), (l1,0), (l2,0), (l3,0))
+            self.gpulabels[card] = ((l0,0), (l1,0), (l2,0), (l3,0))
             gts = [ g for g in os.listdir(dirname)
-                    if g.startswith( 'gt_RP') ]
+                    if g.startswith('gt_RP') ]
             if not len(gts):
                 continue
-            
+
             states = {}
             for g in gts:
                 state = re.match(r'gt_(RP[n\d])_freq_mhz', g).groups()[0]
@@ -194,42 +220,45 @@ class IntelPowerControl(QWidget):
             rps_min = int(states[rps[-1]])
             row += 1
             minslider = QSlider(Qt.Horizontal)
-            minslider.setRange( round(rps_min/self.gpuclkdiv),
+            minslider.setRange(round(rps_min/self.gpuclkdiv),
                                 round(rps_max/self.gpuclkdiv))
             minslider.setTickPosition(QSlider.TicksBelow)
             minslider.setTickInterval(1)
             minslider.setPageStep(1)
-            if not self.suidhelper: minslider.setDisabled(True)
-            self.gpuminmapper.setMapping( minslider, card)
-            minslider.valueChanged.connect( self.gpuminmapper.map)
+            if not self.suidhelper:
+                minslider.setDisabled(True)
+            self.gpuminmapper.setMapping(minslider, card)
+            minslider.valueChanged.connect(self.gpuminmapper.map)
             layout.addWidget(minslider,row, 1, 1, len(Cols))
             row += 1
             maxslider = QSlider(Qt.Horizontal)
-            maxslider.setRange( round(rps_min/self.gpuclkdiv),
+            maxslider.setRange(round(rps_min/self.gpuclkdiv),
                                 round(rps_max/self.gpuclkdiv))
             maxslider.setTickPosition(QSlider.TicksBelow)
             maxslider.setTickInterval(1)
             maxslider.setPageStep(1)
-            if not self.suidhelper: maxslider.setDisabled(True)
-            self.gpumaxmapper.setMapping( maxslider, card)
-            maxslider.valueChanged.connect( self.gpumaxmapper.map)
+            if not self.suidhelper:
+                maxslider.setDisabled(True)
+            self.gpumaxmapper.setMapping(maxslider, card)
+            maxslider.valueChanged.connect(self.gpumaxmapper.map)
             layout.addWidget(maxslider,row, 1, 1, len(Cols))
             row += 1
             boostslider = QSlider(Qt.Horizontal)
-            boostslider.setRange( round(rps_min/self.gpuclkdiv),
+            boostslider.setRange(round(rps_min/self.gpuclkdiv),
                                   round(rps_max/self.gpuclkdiv))
             boostslider.setTickPosition(QSlider.TicksBelow)
             boostslider.setTickInterval(1)
             boostslider.setPageStep(1)
-            if not self.suidhelper: boostslider.setDisabled(True)
-            self.gpuboostmapper.setMapping( boostslider, card)
-            boostslider.valueChanged.connect( self.gpuboostmapper.map)
+            if not self.suidhelper:
+                boostslider.setDisabled(True)
+            self.gpuboostmapper.setMapping(boostslider, card)
+            boostslider.valueChanged.connect(self.gpuboostmapper.map)
             resetBtn = QPushButton("Reset")
             resetBtn.clicked.connect(
                 lambda:
-                (minslider.setValue( minslider.minimum()),
-                 maxslider.setValue( maxslider.maximum()),
-                 boostslider.setValue( boostslider.maximum()),
+                (minslider.setValue(minslider.minimum()),
+                 maxslider.setValue(maxslider.maximum()),
+                 boostslider.setValue(boostslider.maximum()),
                 )
             )
             layout.addWidget(resetBtn, row, 0)
@@ -249,10 +278,12 @@ class IntelPowerControl(QWidget):
                 return False
         if not os.path.exists(os.path.join(self.backlightpath, "brightness")):
                 return False
-        if not os.path.exists(os.path.join(self.backlightpath, "max_brightness")):
+        if not os.path.exists(
+                os.path.join(self.backlightpath, "max_brightness")
+        ):
                 return False
         return True
-    
+
     def setBrightness(self):
         if not self.brightnessAvailable():
             return
@@ -260,24 +291,27 @@ class IntelPowerControl(QWidget):
     def initBrightness(self):
         if not self.brightnessAvailable():
             return
-        brightmax = self.readValue(os.path.join(self.backlightpath, "max_brightness"))
+        brightmax = self.readValue(
+            os.path.join(self.backlightpath, "max_brightness")
+        )
         box = QGroupBox("Brightness")
         layout = QGridLayout()
         self.bnslider = QSlider(Qt.Horizontal)
         if len(brightmax):
-            self.bnslider.setRange( 0, int(int(brightmax)/100))
+            self.bnslider.setRange(0, int(int(brightmax)/100))
         else:
-            self.bnslider.setRange( 0, 1)
-            self.bnslider.setDisabled( True)
+            self.bnslider.setRange(0, 1)
+            self.bnslider.setDisabled(True)
         self.bnslider.setTickPosition(QSlider.TicksBelow)
         self.bnslider.setTickInterval(1)
         self.bnslider.setPageStep(1)
         self.bnslider.valueChanged.connect(self.setBrightness)
-        if not self.suidhelper: self.bnslider.setDisabled(True)
+        if not self.suidhelper:
+            self.bnslider.setDisabled(True)
         layout.addWidget(self.bnslider,0, 1, 1, 3)
         box.setLayout(layout)
         self.layout.addWidget(box)
-        
+
     def initOptions(self):
         self.counter = 0
         self.avgtemp = 0.
@@ -286,66 +320,70 @@ class IntelPowerControl(QWidget):
         box = QGroupBox("Options")
         layout = QGridLayout()
         row = 0
-        layout.addWidget( QLabel("Throttle GPU"), row, 0)
+        layout.addWidget(QLabel("Throttle GPU"), row, 0)
         self.throttlegpu = QCheckBox()
-        if not self.suidhelper: self.throttlegpu.setDisabled(True)
-        layout.addWidget( self.throttlegpu, row, 1)
+        if not self.suidhelper:
+            self.throttlegpu.setDisabled(True)
+        layout.addWidget(self.throttlegpu, row, 1)
         row += 1
-        layout.addWidget( QLabel("Max. Temperature"), row, 0)
+        layout.addWidget(QLabel("Max. Temperature"), row, 0)
         self.maxtemp = QSpinBox()
         self.maxtemp.setRange(50, 100)
-        if not self.suidhelper: self.maxtemp.setDisabled(True)
+        if not self.suidhelper:
+            self.maxtemp.setDisabled(True)
         layout.addWidget(self.maxtemp, row, 1)
         row += 1
-        layout.addWidget( QLabel("Hysteresis"), row, 0)
+        layout.addWidget(QLabel("Hysteresis"), row, 0)
         self.hyst = QSpinBox()
         self.hyst.setRange(-20, 0)
-        if not self.suidhelper: self.hyst.setDisabled(True)
+        if not self.suidhelper:
+            self.hyst.setDisabled(True)
         layout.addWidget(self.hyst, row, 1)
         row += 1
         self.tz = QComboBox()
-        self.tz.addItems( sorted(self.thermals.keys()))
-        if not self.suidhelper: self.tz.setDisabled(True)
-        layout.addWidget( QLabel("Thermal"), row, 0)
-        layout.addWidget( self.tz, row, 1)
+        self.tz.addItems(sorted(self.thermals.keys()))
+        if not self.suidhelper:
+            self.tz.setDisabled(True)
+        layout.addWidget(QLabel("Thermal"), row, 0)
+        layout.addWidget(self.tz, row, 1)
         row+=1
-        layout.addWidget( QLabel("Sync boost to maximum"), row, 0)
+        layout.addWidget(QLabel("Sync boost to maximum"), row, 0)
         self.syncboosttomax = QCheckBox()
         layout.addWidget(self.syncboosttomax, row, 1)
         row+=1
-        
-        layout.addWidget( QLabel("Always On Top"), row, 0)
+
+        layout.addWidget(QLabel("Always On Top"), row, 0)
         self.alwaysontop = QCheckBox()
         layout.addWidget(self.alwaysontop, row, 1)
         row+=1
-        layout.addWidget( QLabel("Show Systray Icon"), row, 0)
+        layout.addWidget(QLabel("Show Systray Icon"), row, 0)
         self.showsystray = QCheckBox()
         layout.addWidget(self.showsystray, row, 1)
         row+=1
-        layout.addWidget( QLabel("Minimize To Tray"), row, 0)
+        layout.addWidget(QLabel("Minimize To Tray"), row, 0)
         self.minimizetray = QCheckBox()
         self.minimizetray.setEnabled(self.showsystray.isChecked())
         layout.addWidget(self.minimizetray, row, 1)
         row+=1
-        layout.addWidget( QLabel("Start Hidden"), row, 0)
+        layout.addWidget(QLabel("Start Hidden"), row, 0)
         self.starthidden = QCheckBox()
         self.starthidden.setEnabled(self.showsystray.isChecked())
         layout.addWidget(self.starthidden, row, 1)
-        
-        layout.setColumnStretch( row, 1)
+
+        layout.setColumnStretch(row, 1)
         box.setLayout(layout)
         self.layout.addWidget(box)
         self.status = QStatusBar(self)
         self.layout.addWidget(self.status)
         self.loadSettings()
-        
-        self.throttlegpu.toggled.connect( self.toggleThrottling)
-        self.maxtemp.valueChanged.connect( self.setMaxTemp)
-        self.hyst.valueChanged.connect( self.setHyst)
-        self.tz.currentIndexChanged.connect( self.setActiveThermal)
-        self.syncboosttomax.stateChanged.connect( self.toggleSyncBoostToMax)
-        self.alwaysontop.stateChanged.connect( self.toggleAlwaysOnTop)
-        self.showsystray.stateChanged.connect( self.toggleSystray)
+
+        self.throttlegpu.toggled.connect(self.toggleThrottling)
+        self.maxtemp.valueChanged.connect(self.setMaxTemp)
+        self.hyst.valueChanged.connect(self.setHyst)
+        self.tz.currentIndexChanged.connect(self.setActiveThermal)
+        self.syncboosttomax.stateChanged.connect(self.toggleSyncBoostToMax)
+        self.alwaysontop.stateChanged.connect(self.toggleAlwaysOnTop)
+        self.showsystray.stateChanged.connect(self.toggleSystray)
         self.minimizetray.stateChanged.connect(
             lambda x: self.updateSettings('minimizetray', int(x)))
         self.starthidden.stateChanged.connect(
@@ -354,14 +392,14 @@ class IntelPowerControl(QWidget):
     def updateSettings(self,name,state):
         s = QSettings()
         s.setValue(name,state)
-    
+
     def toggleSyncBoostToMax(self,state):
         self.syncboosttomax.setChecked(state)
         for k,v in self.gpusliders.items():
             v[Vars.BST].setEnabled(not state)
         s = QSettings()
-        s.setValue( "syncboosttomax", int(state))
-    
+        s.setValue("syncboosttomax", int(state))
+
     def toggleAlwaysOnTop(self,state):
         self.alwaysontop.setChecked(state)
         hidden = self.isHidden()
@@ -371,10 +409,11 @@ class IntelPowerControl(QWidget):
         else:
             flags &= ~Qt.WindowStaysOnTopHint
         self.setWindowFlags(flags)
-        if not hidden: self.show()
+        if not hidden:
+            self.show()
         s = QSettings()
-        s.setValue( "alwaysontop", int(state))
-    
+        s.setValue("alwaysontop", int(state))
+
     def createSystray(self):
         if not QSystemTrayIcon.isSystemTrayAvailable():
             return
@@ -384,7 +423,7 @@ class IntelPowerControl(QWidget):
         pix = QPixmap(22,22)
         pix.fill(Qt.transparent)
         self.systray.setIcon(QIcon(pix))
-        self.systray.activated.connect( self.systrayActivated)
+        self.systray.activated.connect(self.systrayActivated)
         m = QMenu()
         m.addAction("Quit", QApplication.quit)
         self.systray.setContextMenu(m)
@@ -406,7 +445,7 @@ class IntelPowerControl(QWidget):
         else:
             self.destroySystray()
         s = QSettings()
-        s.setValue( "systray", int(state))
+        s.setValue("systray", int(state))
 
     def systrayActivated(self,reason):
         if reason == QSystemTrayIcon.Trigger:
@@ -414,56 +453,56 @@ class IntelPowerControl(QWidget):
                 self.show()
             else:
                 self.hide()
-    
+
     def loadSettings(self):
         self.status.showMessage("Loading settings", self.msgtimeout)
         s = QSettings()
         self.fgColor = QColor(s.value("fgColor", QColor("#33b0dc")))
         self.bgColor = QColor(s.value("bgColor", QColor("#144556")))
-        self.setMaxTemp( int(s.value("maxtemp", 80)))
-        self.setHyst(    int(s.value("hyst",     -5)))
-        self.toggleThrottling( int(s.value("throttlegpu",  1)))
-        self.setActiveThermal( int(s.value("tzindex", -1)))
-        self.toggleSyncBoostToMax( int(s.value("syncboosttomax", 0)))
-        self.toggleAlwaysOnTop( int(s.value("alwaysontop", 0)))
-        self.toggleSystray( int(s.value("systray", 0)))
-        self.minimizetray.setChecked( int(s.value("minimizetray", 0)))
-        self.starthidden.setChecked( int(s.value("starthidden", 0)))
-        
+        self.setMaxTemp(int(s.value("maxtemp", 80)))
+        self.setHyst(int(s.value("hyst", -5)))
+        self.toggleThrottling(int(s.value("throttlegpu",  1)))
+        self.setActiveThermal(int(s.value("tzindex", -1)))
+        self.toggleSyncBoostToMax(int(s.value("syncboosttomax", 0)))
+        self.toggleAlwaysOnTop(int(s.value("alwaysontop", 0)))
+        self.toggleSystray(int(s.value("systray", 0)))
+        self.minimizetray.setChecked(int(s.value("minimizetray", 0)))
+        self.starthidden.setChecked(int(s.value("starthidden", 0)))
+
     def setMaxTemp(self,newmax):
         self.maxtemp.setValue(newmax)
         for k,v in self.thermals.items():
             label, val, typename = v
             stylesheet = "QLabel { color: %s }" % \
                          ("black" if val < newmax else "red")
-            label.setStyleSheet( stylesheet)
+            label.setStyleSheet(stylesheet)
         s = QSettings()
-        s.setValue( "maxtemp", newmax)
-        
+        s.setValue("maxtemp", newmax)
+
     def setHyst(self,hyst):
         self.hyst.setValue(hyst)
         s = QSettings()
-        s.setValue( "hyst", hyst)
-        
+        s.setValue("hyst", hyst)
+
     def toggleThrottling(self, state):
-        self.throttlegpu.setChecked( state)
+        self.throttlegpu.setChecked(state)
         if self.throttlegpu.isEnabled():
-            self.maxtemp.setEnabled( state)
-            self.hyst.setEnabled( state)
-            self.tz.setEnabled( state)
+            self.maxtemp.setEnabled(state)
+            self.hyst.setEnabled(state)
+            self.tz.setEnabled(state)
         s = QSettings()
-        s.setValue( "throttlegpu", int(state))
+        s.setValue("throttlegpu", int(state))
         if state == False:
             for k,v in self.thermals.items():
                 label, val, typename = v
                 stylesheet = "QLabel { color: black }"
-                label.setStyleSheet( stylesheet)
+                label.setStyleSheet(stylesheet)
 
     def setActiveThermal(self, index):
-        self.tz.setCurrentIndex( index)
+        self.tz.setCurrentIndex(index)
         s = QSettings()
-        s.setValue( "tzindex", index)
-        
+        s.setValue("tzindex", index)
+
     def updateAll(self):
         self.updateValues()
         self.updateGUI()
@@ -473,17 +512,18 @@ class IntelPowerControl(QWidget):
             self.updateSystray()
 
     def updateSystray(self):
-        if not self.systray: return
+        if not self.systray:
+            return
         self.systray.show()
         pix = QPixmap(22,22)
-        pix.fill( self.bgColor)
+        pix.fill(self.bgColor)
         p = QPainter(pix)
         f = QFont("Dejavu Sans", 6)
         p.setFont(f)
         p.setPen(self.fgColor)
-        p.drawText( pix.rect(),Qt.AlignTop|Qt.AlignHCenter, "GPU")
+        p.drawText(pix.rect(),Qt.AlignTop|Qt.AlignHCenter, "GPU")
         if self.systrayCycle == 0:
-            p.drawText( pix.rect(),Qt.AlignBottom|Qt.AlignHCenter, "Temp")
+            p.drawText(pix.rect(),Qt.AlignBottom|Qt.AlignHCenter, "Temp")
         elif self.systrayCycle == 1:
             p.save()
             temp = "..."
@@ -491,11 +531,11 @@ class IntelPowerControl(QWidget):
                 temp = round(self.avgtemp)
                 if self.maxtemp.isEnabled() and temp >= self.maxtemp.value():
                     p.setPen(Qt.red)
-            p.drawText( pix.rect(),Qt.AlignBottom|Qt.AlignHCenter,
+            p.drawText(pix.rect(),Qt.AlignBottom|Qt.AlignHCenter,
                         "%s\xb0C" % str(temp))
             p.restore()
         elif self.systrayCycle == 2:
-            p.drawText( pix.rect(),Qt.AlignBottom|Qt.AlignHCenter, "CLK")
+            p.drawText(pix.rect(),Qt.AlignBottom|Qt.AlignHCenter, "CLK")
         elif self.systrayCycle == 3:
             p.save()
             gpu = min(self.gpulabels.values(),
@@ -504,7 +544,7 @@ class IntelPowerControl(QWidget):
             maxclock = gpu[Cols.MAX][0].text().split()[0]
             if curclock == maxclock:
                 p.setPen(Qt.red)
-            p.drawText( pix.rect(),Qt.AlignBottom|Qt.AlignHCenter,
+            p.drawText(pix.rect(),Qt.AlignBottom|Qt.AlignHCenter,
                         "%s" % curclock)
             p.restore()
         self.systrayCycle = (self.systrayCycle+1)%4
@@ -520,9 +560,9 @@ class IntelPowerControl(QWidget):
                 for k,v in self.gpusliders.items():
                     if v[Vars.MAX].isEnabled() and \
                        v[Vars.MAX].value() != v[Vars.MAX].minimum():
-                        v[Vars.MAX].setValue(  v[Vars.MAX].value()-1)
+                        v[Vars.MAX].setValue(v[Vars.MAX].value()-1)
                         changed = True
-                if changed:        
+                if changed:
                     self.status.showMessage(
                         "Decreasing GPU clocks: %.1f°C > %d°C" %
                         (self.avgtemp,maxtemp), self.msgtimeout)
@@ -530,13 +570,13 @@ class IntelPowerControl(QWidget):
                 for k,v in self.gpusliders.items():
                     if v[Vars.MAX].isEnabled() and \
                        v[Vars.MAX].value() != v[Vars.MAX].maximum():
-                        v[Vars.MAX].setValue( v[Vars.MAX].value()+1)
+                        v[Vars.MAX].setValue(v[Vars.MAX].value()+1)
                         changed = True
                 if changed:
                     self.status.showMessage(
                         "Increasing GPU clocks: %.1f°C < %d°C" %
                         (self.avgtemp,maxtemp+hyst), self.msgtimeout)
-        
+
     def updateValues(self):
         # cpus
         for k,v in self.cpulabels.items():
@@ -546,7 +586,7 @@ class IntelPowerControl(QWidget):
                     v[0], 'green' if int(self.readValue(online)) else 'red')
             else:
                 self.cpulabels[k] = (v[0], 'green')
-        
+
         # thermals
         for k,v in self.thermals.items():
             self.thermals[k] = (v[0], int(self.readValue(
@@ -580,7 +620,7 @@ class IntelPowerControl(QWidget):
             #print ("Average temperature:", self.avgtemp)
             self.sumtemp = 0.
         # brightness
-        bn = self.readValue( os.path.join(self.backlightpath,'brightness'))
+        bn = self.readValue(os.path.join(self.backlightpath,'brightness'))
         if len(bn):
             bnint = int(int(bn)/100)
             if self.bnslider.value() != bnint:
@@ -588,17 +628,17 @@ class IntelPowerControl(QWidget):
                 self.bnslider.setTracking(False)
                 self.bnslider.setSliderPosition(bnint)
                 self.bnslider.setTracking(tstate)
-        
+
     def updateGUI(self):
         # cpus
         for k,v in self.cpulabels.items():
             v[0].setStyleSheet(
                 'QPushButton {color: white; background-color: %s}' % v[1])
-        
+
         # thermals
         for k,v in self.thermals.items():
             label, val, typename = v
-            label.setText( u"%d°C" % val)
+            label.setText(u"%d°C" % val)
             if self.throttlegpu.isChecked():
                 if val > self.maxtemp.value():
                     label.setStyleSheet("QLabel { color: red }")
@@ -610,15 +650,17 @@ class IntelPowerControl(QWidget):
             for i in range(len(Cols)):
                 v[i][0].setText("%d MHz" % v[i][1])
         for k,v in self.gpusliders.items():
-            v[Vars.MIN].setValue( int(self.gpulabels[k][Cols.MIN][1]/
+            v[Vars.MIN].setValue(int(self.gpulabels[k][Cols.MIN][1]/
                                       self.gpuclkdiv))
-            v[Vars.MAX].setValue( int(self.gpulabels[k][Cols.MAX][1]/
+            v[Vars.MAX].setValue(int(self.gpulabels[k][Cols.MAX][1]/
                                       self.gpuclkdiv))
-            v[Vars.BST].setValue( int(self.gpulabels[k][Cols.BST][1]/
+            v[Vars.BST].setValue(int(self.gpulabels[k][Cols.BST][1]/
                                       self.gpuclkdiv))
 
     def callHelper(self, args):
-        args = [ self.suidhelper ] + args
+        if not self.suidhelper:
+            return 1
+        args = self.suidhelper + args
         ret = subprocess.run(
             args,
             stdout=subprocess.PIPE,
@@ -632,7 +674,8 @@ class IntelPowerControl(QWidget):
 
     @pyqtSlot(str)
     def toggleCPU(self, cpu):
-        if not self.suidhelper: return
+        if not self.suidhelper:
+            return
         btn, val = self.cpulabels[str(cpu)]
         newval = 'red' if val == 'green' else 'green'
         self.cpulabels[str(cpu)] = (btn, newval)
@@ -644,10 +687,11 @@ class IntelPowerControl(QWidget):
             'QPushButton {color: white; background-color: %s}' % newval)
         self.status.showMessage(
             "Switching %s to %s" %(cpu,newval),self.msgtimeout)
-    
+
     @pyqtSlot(str)
     def setMinimumClock(self, gpu):
-        if not self.suidhelper: return
+        if not self.suidhelper:
+            return
         val = self.gpusliders[str(gpu)][Vars.MIN].value()
         args = [ "-g", gpu, "-l", str(val*self.gpuclkdiv) ]
         if val > self.gpusliders[str(gpu)][Vars.MAX].value():
@@ -659,10 +703,11 @@ class IntelPowerControl(QWidget):
 
         self.gpulabels[str(gpu)][Cols.MIN][0].setText(
             "%d MHz" % (val*self.gpuclkdiv))
-        
+
     @pyqtSlot(str)
     def setMaximumClock(self, gpu):
-        if not self.suidhelper: return
+        if not self.suidhelper:
+            return
         val = self.gpusliders[str(gpu)][Vars.MAX].value()
         args = [ "-g", gpu, "-u", str(val*self.gpuclkdiv) ]
         if val < self.gpusliders[str(gpu)][Vars.MIN].value():
@@ -677,10 +722,11 @@ class IntelPowerControl(QWidget):
         if self.syncboosttomax.isChecked():
             self.gpusliders[str(gpu)][Vars.BST].setValue(val)
             self.setBoostClock(gpu)
-        
+
     @pyqtSlot(str)
     def setBoostClock(self, gpu):
-        if not self.suidhelper: return
+        if not self.suidhelper:
+            return
         val = self.gpusliders[str(gpu)][Vars.BST].value()
         args = [ "-g", gpu, "-s", str(val*self.gpuclkdiv) ]
         if val < self.gpusliders[str(gpu)][Vars.MIN].value():
@@ -692,13 +738,14 @@ class IntelPowerControl(QWidget):
 
         self.gpulabels[str(gpu)][Cols.BST][0].setText(
             "%d MHz" % (val*self.gpuclkdiv))
-        
+
     @pyqtSlot()
     def setBrightness(self):
-        if not self.suidhelper: return
+        if not self.suidhelper:
+            return
         val = self.bnslider.value()*100
         self.callHelper([ "-b", str(val) ])
-        
+
     @staticmethod
     def readValue(fn):
         ret = ''
@@ -706,16 +753,21 @@ class IntelPowerControl(QWidget):
             f = open(fn)
             ret = f.readline()
             f.close()
-        except: pass
+        except:
+            pass
         return ret.strip()
 
-def natural_sort(l): 
+def natural_sort(l):
     convert = lambda text: int(text) if text.isdigit() else text.lower()
     alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
     return sorted(l, key=alphanum_key)
 
 def getDataFile(fn, subdir=""):
-    datapaths = [ '/usr/local/share', '/usr/share' ]
+    datapaths = [
+        os.path.join(os.environ['HOME'], '.local', 'share'),
+        '/usr/local/share',
+        '/usr/share'
+    ]
     for p in datapaths:
         path = os.path.join(p, subdir, fn)
         if os.path.exists(path):
@@ -726,7 +778,7 @@ def detach():
     stdin  = '/dev/null'
     stdout = '/dev/null'
     stderr = '/dev/null'
-    
+
     try:
         pid = os.fork()
         if pid > 0:
@@ -735,12 +787,12 @@ def detach():
     except OSError as e:
         sys.stderr.write("fork #1 failed: %d (%s)\n" % (e.errno, e.strerror))
         sys.exit(1)
-        
+
     # decouple from parent environment
     os.chdir("/")
     os.setsid()
     os.umask(0)
-        
+
     # do second fork
     try:
         pid = os.fork()
@@ -750,7 +802,7 @@ def detach():
     except OSError as e:
         sys.stderr.write("fork #2 failed: %d (%s)\n" % (e.errno, e.strerror))
         sys.exit(1)
-        
+
     # redirect standard file descriptors
     sys.stdout.flush()
     sys.stderr.flush()
@@ -765,15 +817,16 @@ def parseCommandLine():
     ret = {}
     parser = argparse.ArgumentParser(
         description='intel-power-control')
-    parser.add_argument( '-d', '--daemon',
+    parser.add_argument('-d', '--daemon',
                          help='run as daemon', action="store_true")
-    parser.add_argument( '-style',
+    parser.add_argument('-style',
                          help='set Qt style')
     args = parser.parse_args()
-    
+
     # detach immediately if run as daemon
-    if args.daemon: detach()
-    
+    if args.daemon:
+        detach()
+
     ret['daemon'] = args.daemon
 
     return ret
@@ -785,8 +838,10 @@ def main():
     argdict = parseCommandLine()
     a = QApplication(sys.argv)
     a.setOrganizationName("mechnich")
-    a.setApplicationName( "intel-power-control")
-    a.setWindowIcon(QIcon(getDataFile("intel-power-control.png", subdir="icons")))
+    a.setApplicationName("intel-power-control")
+    a.setWindowIcon(
+        QIcon(getDataFile("intel-power-control.png", subdir="icons"))
+    )
     i = IntelPowerControl()
     return a.exec_()
 

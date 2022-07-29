@@ -1,3 +1,6 @@
-/.gitignore
-/intel-power-control-helper
 *~
+/intel-power-control-helper
+/.eggs/
+/build/
+/dist/
+/*.egg-info/

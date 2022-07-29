@@ -1,0 +1,2 @@
+# /etc/sudoers.d/intel-power-control
+%sudo ALL=(ALL) NOPASSWD: /usr/local/bin/intel-power-control-helper

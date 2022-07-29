@@ -4,6 +4,7 @@
 #include <getopt.h>
 #include <string.h>
 #include <ctype.h>
+#include <unistd.h>
 
 const char* drmbasepath = "/sys/class/drm";
 const char* cpubasepath = "/sys/devices/system/cpu";
@@ -16,7 +17,7 @@ int toggleCPU( const char* cpu)
   printf("call toggleCPU(%s)\n", cpu);
 #endif
   const char* fn = "online";
-  
+
   size_t buflen = strlen(cpubasepath) + strlen(cpu) + strlen(fn) + 3;
   char* buf = calloc( sizeof(char), buflen);
   snprintf( buf, buflen, "%s/%s/%s", cpubasepath, cpu, fn);
@@ -56,7 +57,7 @@ int toggleCPU( const char* cpu)
     printf( "Error writing byte to file, got %lu\n", written);
     return 1;
   }
-    
+
   return 0;
 }
 
@@ -75,7 +76,7 @@ int setMHz( const char* gpu, const char* fn, const char* val)
     free( buf);
     return 1;
   }
-  
+
   size_t written = fwrite( val, sizeof(char), strlen(val), f);
 
   fclose( f);
@@ -86,7 +87,7 @@ int setMHz( const char* gpu, const char* fn, const char* val)
     printf( "Error writing %lu bytes to file, got %lu\n", strlen(val), written);
     return 1;
   }
-    
+
   return 0;
 }
 
@@ -124,7 +125,7 @@ void checkPath(const char* arg, const char* val)
   if(strchr(val,'/')!=0) goto ABORT;
 
   return;
-  
+
   ABORT:
   printf("invalid value for argument '%s': %s\n", arg, val);
   abort();
@@ -166,10 +167,16 @@ void help()
 
 int main( int argc, char** argv)
 {
+  uid_t euid = geteuid();
+  if(euid != 0) {
+    printf("intel-power-control-helper: insufficient privileges\n");
+    return 1;
+  }
+
   const char* minfn = "gt_min_freq_mhz";
   const char* maxfn = "gt_max_freq_mhz";
   const char* bstfn = "gt_boost_freq_mhz";
-  
+
   char cpu[bufsize+1], gpu[bufsize+1], min[bufsize+1], max[bufsize+1],
       bst[bufsize+1], bn[bufsize+1];
   memset( cpu, 0, bufsize+1);
@@ -180,11 +187,11 @@ int main( int argc, char** argv)
   memset( bn,  0, bufsize+1);
 
   int setFreq = 0;
-    
+
   int c;
   while (1)
   {
-  
+
     static struct option long_options[] =
         {
             /* These options set a flag. */
@@ -201,11 +208,11 @@ int main( int argc, char** argv)
     int option_index = 0;
     c = getopt_long (argc, argv, "c:g:l:u:s:b:h",
                      long_options, &option_index);
-    
+
     /* Detect the end of the options. */
     if (c == -1)
         break;
-    
+
     switch (c)
     {
     case 'c':

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=intel-power-control
+Exec=intel-power-control
+Terminal=false
+Type=Application
+Icon=intel-power-control
+Comment=GPU power management for Intel hardware on Linux
+Categories=HardwareSettings;Qt;System;Utility;
