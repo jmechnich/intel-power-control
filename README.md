@@ -1,3 +1,8 @@
+[![PyPI versio](https://img.shields.io/pypi/v/intel-power-control)](https://pypi.org/project/intel-power-control/)
+[![PyPi format](https://img.shields.io/pypi/format/intel-power-control)](https://pypi.org/project/intel-power-control/)
+[![PyPI license](https://img.shields.io/pypi/l/intel-power-control)](https://pypi.org/project/intel-power-control/)
+[![PyPi weekly downloads](https://img.shields.io/pypi/dw/intel-power-control)](https://pypi.org/project/intel-power-control/)
+
 # intel-power-control
 
 GPU power management for Intel hardware on Linux
@@ -51,6 +56,12 @@ sudo chmod 4755 $HOME/.local/bin/intel-power-control-helper
 intel-power-control
 ```
 
+## Checking and fixing intel-power-control-helper permissions
+
+The script `intel-power-control-setup` is supplied to set up the
+permissions for `intel-power-control-helper` correctly after
+installation.
+
 ## Changing the look and feel
 
 Use the `-style` commandline option to select a different
@@ -59,4 +70,4 @@ an invalid style argument, e.g. `-style help`.
 
 ## Screenshots
 
-![](https://raw.github.com/jmechnich/intel-power-control/master/screens/screen.png)
+![](https://raw.github.com/jmechnich/intel-power-control/master/misc/screenshot.png)

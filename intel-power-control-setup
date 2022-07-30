@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+
+import os
+import stat
+import sys
+
+def setup_suid(helper, statinfo):
+    print('Using SUID method')
+    if statinfo.st_uid != 0:
+        print('Changing ownership to root:root')
+        os.chown(helper, 0, 0)
+    if stat.S_IMODE(statinfo.st_mode) != 0o4755:
+        print('Setting SUID bit')
+        os.chmod(helper, 0o4755)
+
+def setup_sudo(helper):
+    print('Using sudo method')
+    sudodir = '/etc/sudoers.d'
+    if not os.path.exists(sudodir):
+        print(f'{sudodir} does not exist, is sudo installed?')
+        sys.exit(1)
+    sudofile = os.path.join(sudodir,'intel-power-control')
+    with open(sudofile, 'w') as f:
+        f.write(f'%sudo ALL=(ALL) NOPASSWD: {helper}')
+        
+    print(f'Successfully installed {sudofile},'
+          ' make sure user is member of group sudo')
+    
+installdir = os.path.dirname(__file__)
+helper = os.path.join(installdir, 'intel-power-control-helper')
+
+if not os.path.exists(helper):
+    print(f'Could not find intel-power-control-helper in {installdir}')
+    sys.exit(1)
+
+statinfo = os.stat(helper)
+if statinfo.st_uid == 0 and stat.S_IMODE(statinfo.st_mode) == 0o4755:
+    print('intel-power-control-helper is already set up correctly')
+    sys.exit(0)
+
+if os.geteuid() != 0:
+    print('Please run this script with root privileges')
+    sys.exit(1)
+
+dirstat = os.stat(os.path.dirname(helper))
+if dirstat.st_uid != 0 or dirstat.st_gid != 0:
+    print('Installation directory does not belong to root,'
+          ' assuming user installation')
+    setup_suid(helper, statinfo)
+else:
+    print('Installation directory belongs to root, choose strategy:')
+    print('1: suid')
+    print('2: sudo')
+    ans = input('Choose 1 or 2, Ctrl-C to abort:').strip()
+    if ans == '1':
+        setup_suid(helper, statinfo)
+    elif ans == '2':
+        setup_sudo(helper)
+    else:
+        print('Aborting')
+        sys.exit(1)
+
+sys.exit(0)

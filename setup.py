@@ -27,6 +27,7 @@ setup(
     name='intel-power-control',
     author='Joerg Mechnich',
     author_email='joerg.mechnich@gmail.com',
+    license='GNU GPLv3',
     description='GPU power management for Intel hardware on Linux',
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -34,11 +35,11 @@ setup(
     use_scm_version={"local_scheme": "no-local-version"},
     setup_requires=['setuptools_scm'],
     install_requires=['PyQt5'],
-    scripts=['intel-power-control'],
+    scripts=['intel-power-control', 'intel-power-control-setup'],
     data_files=[
-        ('share/applications',                ['intel-power-control.desktop']),
-        ('share/icons/hicolor/32x32/apps',    ['intel-power-control.png']),
-        ('share/icons/hicolor/scalable/apps', ['intel-power-control.svg']),
+        ('share/applications',                ['misc/intel-power-control.desktop']),
+        ('share/icons/hicolor/32x32/apps',    ['misc/intel-power-control.png']),
+        ('share/icons/hicolor/scalable/apps', ['misc/intel-power-control.svg']),
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
