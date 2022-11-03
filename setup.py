@@ -34,7 +34,7 @@ setup(
     url='https://github.com/jmechnich/intel-power-control',
     use_scm_version={"local_scheme": "no-local-version"},
     setup_requires=['setuptools_scm'],
-    install_requires=['PyQt5'],
+    install_requires=['PyQt5', 'PyQt5-sip'],
     scripts=['intel-power-control', 'intel-power-control-setup'],
     data_files=[
         ('share/applications',                ['misc/intel-power-control.desktop']),
