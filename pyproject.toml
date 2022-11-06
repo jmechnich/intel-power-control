@@ -4,3 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
 local_scheme = "no-local-version"
+
+[tool.black]
+line-length = 80
+target-version = ['py38']
+include = '''
+(
+  \.pyi?$
+  | intel-power-control$
+  | intel-power-control-setup$
+)
+'''
