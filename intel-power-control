@@ -4,7 +4,6 @@
 import argparse
 import os
 import re
-import sip
 import subprocess
 import sys
 
@@ -433,7 +432,7 @@ class IntelPowerControl(QWidget):
     def destroySystray(self):
         if not self.systray:
             return
-        sip.delete(self.systray)
+        self.systray.deleteLater()
         self.systray = None
 
     def toggleSystray(self,state):
