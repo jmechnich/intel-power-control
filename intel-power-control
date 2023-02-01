@@ -620,14 +620,18 @@ class IntelPowerControl(QWidget):
 
         # thermals
         for k, v in self.thermals.items():
-            self.thermals[k] = (
-                v[0],
-                int(
+            try:
+                value =  int(
                     self.readValue(
                         os.path.join(self.thermalbasepath, k, "temp")
                     )
-                )
-                / 1000,
+                ) / 1000
+            except ValueError:
+                value = -1
+
+            self.thermals[k] = (
+                v[0],
+                value,
                 v[2],
             )
 
