@@ -15,14 +15,14 @@ GPU power management for Intel hardware on Linux
 
 ## Requirements
 - C compiler (i.e. gcc)
-- Qt 5.x
+- Qt 6.x
 - python3
 
 ## Installation from source
 
 ```
 git clone https://github.com/jmechnich/intel-power-control.git
-    
+
 # compile
 cd intel-power-control
 make
