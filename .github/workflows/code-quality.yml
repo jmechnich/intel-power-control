@@ -11,6 +11,6 @@ jobs:
       with:
         python-version: 3.x
     - run: pip install --upgrade pip
-    - run: pip install "black<23" pylint==v3.0.0a3 mypy==v0.902
+    - run: pip install black==v23.10.1 pylint==v3.0.2 mypy==v1.6.1
     - run: black --diff --check .
     - run: pylint --disable=all --enable=unused-import setup.py intel-power-control intel-power-control-setup
