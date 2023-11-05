@@ -9,7 +9,40 @@ import sys
 
 from enum import IntEnum
 
-from PyQt5.Qt import *
+from PyQt6.QtCore import (
+    Qt,
+    QPoint,
+    QSettings,
+    QSignalMapper,
+    QTimer,
+    pyqtSlot,
+)
+from PyQt6.QtGui import (
+    QColor,
+    QColorConstants,
+    QFont,
+    QGuiApplication,
+    QIcon,
+    QPainter,
+    QPixmap,
+)
+from PyQt6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QPushButton,
+    QSlider,
+    QSpinBox,
+    QStatusBar,
+    QSystemTrayIcon,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 def which(program):
@@ -77,15 +110,7 @@ class IntelPowerControl(QWidget):
             self.systrayTimer.timeout.connect(self.checkSystray)
             self.systrayTimer.start()
         self.setFixedSize(self.sizeHint())
-        d = QApplication.desktop()
-        screen = -1
-        # nscreens = d.screenCount()
-        # if nscreens > 1:
-        #    pri = d.primaryScreen()
-        #    screens = list(range(nscreens))
-        #    if pri > -1: screens.remove(pri)
-        #    screen  = screens[0]
-        sr = d.availableGeometry(screen)
+        sr = QGuiApplication.primaryScreen().geometry()
         self.move(
             sr.center() - QPoint(int(self.width() / 2), int(self.height() / 2))
         )
@@ -147,7 +172,7 @@ class IntelPowerControl(QWidget):
             l.clicked.connect(self.cpumapper.map)
             layout.addWidget(l)
             self.cpulabels[i] = (l, "green")
-        self.cpumapper.mapped["QString"].connect(self.toggleCPU)
+        self.cpumapper.mappedString.connect(self.toggleCPU)
         box.setLayout(layout)
         self.layout.addWidget(box)
 
@@ -231,11 +256,11 @@ class IntelPowerControl(QWidget):
             rps_max = int(states[rps[0]])
             rps_min = int(states[rps[-1]])
             row += 1
-            minslider = QSlider(Qt.Horizontal)
+            minslider = QSlider(Qt.Orientation.Horizontal)
             minslider.setRange(
                 round(rps_min / self.gpuclkdiv), round(rps_max / self.gpuclkdiv)
             )
-            minslider.setTickPosition(QSlider.TicksBelow)
+            minslider.setTickPosition(QSlider.TickPosition.TicksBelow)
             minslider.setTickInterval(1)
             minslider.setPageStep(1)
             if not self.suidhelper:
@@ -244,11 +269,11 @@ class IntelPowerControl(QWidget):
             minslider.valueChanged.connect(self.gpuminmapper.map)
             layout.addWidget(minslider, row, 1, 1, len(Cols))
             row += 1
-            maxslider = QSlider(Qt.Horizontal)
+            maxslider = QSlider(Qt.Orientation.Horizontal)
             maxslider.setRange(
                 round(rps_min / self.gpuclkdiv), round(rps_max / self.gpuclkdiv)
             )
-            maxslider.setTickPosition(QSlider.TicksBelow)
+            maxslider.setTickPosition(QSlider.TickPosition.TicksBelow)
             maxslider.setTickInterval(1)
             maxslider.setPageStep(1)
             if not self.suidhelper:
@@ -257,11 +282,11 @@ class IntelPowerControl(QWidget):
             maxslider.valueChanged.connect(self.gpumaxmapper.map)
             layout.addWidget(maxslider, row, 1, 1, len(Cols))
             row += 1
-            boostslider = QSlider(Qt.Horizontal)
+            boostslider = QSlider(Qt.Orientation.Horizontal)
             boostslider.setRange(
                 round(rps_min / self.gpuclkdiv), round(rps_max / self.gpuclkdiv)
             )
-            boostslider.setTickPosition(QSlider.TicksBelow)
+            boostslider.setTickPosition(QSlider.TickPosition.TicksBelow)
             boostslider.setTickInterval(1)
             boostslider.setPageStep(1)
             if not self.suidhelper:
@@ -280,9 +305,9 @@ class IntelPowerControl(QWidget):
             layout.addWidget(boostslider, row, 1, 1, len(Cols))
             row += 1
             self.gpusliders[card] = (minslider, maxslider, boostslider)
-        self.gpuminmapper.mapped["QString"].connect(self.setMinimumClock)
-        self.gpumaxmapper.mapped["QString"].connect(self.setMaximumClock)
-        self.gpuboostmapper.mapped["QString"].connect(self.setBoostClock)
+        self.gpuminmapper.mappedString.connect(self.setMinimumClock)
+        self.gpumaxmapper.mappedString.connect(self.setMaximumClock)
+        self.gpuboostmapper.mappedString.connect(self.setBoostClock)
         # layout.setColumnStretch(3,1)
         layout.setHorizontalSpacing(10)
         box.setLayout(layout)
@@ -311,13 +336,13 @@ class IntelPowerControl(QWidget):
         )
         box = QGroupBox("Brightness")
         layout = QGridLayout()
-        self.bnslider = QSlider(Qt.Horizontal)
+        self.bnslider = QSlider(Qt.Orientation.Horizontal)
         if len(brightmax):
             self.bnslider.setRange(0, int(int(brightmax) / 100))
         else:
             self.bnslider.setRange(0, 1)
             self.bnslider.setDisabled(True)
-        self.bnslider.setTickPosition(QSlider.TicksBelow)
+        self.bnslider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.bnslider.setTickInterval(1)
         self.bnslider.setPageStep(1)
         self.bnslider.valueChanged.connect(self.setBrightness)
@@ -422,9 +447,9 @@ class IntelPowerControl(QWidget):
         hidden = self.isHidden()
         flags = self.windowFlags()
         if state:
-            flags |= Qt.WindowStaysOnTopHint
+            flags |= Qt.WindowType.WindowStaysOnTopHint
         else:
-            flags &= ~Qt.WindowStaysOnTopHint
+            flags &= ~Qt.WindowType.WindowStaysOnTopHint
         self.setWindowFlags(flags)
         if not hidden:
             self.show()
@@ -438,7 +463,7 @@ class IntelPowerControl(QWidget):
             self.destroySystray()
         self.systray = QSystemTrayIcon()
         pix = QPixmap(22, 22)
-        pix.fill(Qt.transparent)
+        pix.fill(QColorConstants.Transparent)
         self.systray.setIcon(QIcon(pix))
         self.systray.activated.connect(self.systrayActivated)
         m = QMenu()
@@ -465,7 +490,7 @@ class IntelPowerControl(QWidget):
         s.setValue("systray", int(state))
 
     def systrayActivated(self, reason):
-        if reason == QSystemTrayIcon.Trigger:
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
             if self.isHidden():
                 self.show()
             else:
@@ -539,9 +564,17 @@ class IntelPowerControl(QWidget):
         f = QFont("Dejavu Sans", 6)
         p.setFont(f)
         p.setPen(self.fgColor)
-        p.drawText(pix.rect(), Qt.AlignTop | Qt.AlignHCenter, "GPU")
+        p.drawText(
+            pix.rect(),
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter,
+            "GPU",
+        )
         if self.systrayCycle == 0:
-            p.drawText(pix.rect(), Qt.AlignBottom | Qt.AlignHCenter, "Temp")
+            p.drawText(
+                pix.rect(),
+                Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
+                "Temp",
+            )
         elif self.systrayCycle == 1:
             p.save()
             temp = "..."
@@ -551,12 +584,16 @@ class IntelPowerControl(QWidget):
                     p.setPen(Qt.red)
             p.drawText(
                 pix.rect(),
-                Qt.AlignBottom | Qt.AlignHCenter,
+                Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
                 "%s\xb0C" % str(temp),
             )
             p.restore()
         elif self.systrayCycle == 2:
-            p.drawText(pix.rect(), Qt.AlignBottom | Qt.AlignHCenter, "CLK")
+            p.drawText(
+                pix.rect(),
+                Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
+                "CLK",
+            )
         elif self.systrayCycle == 3:
             p.save()
             gpu = min(self.gpulabels.values(), key=lambda x: x[0][0].text())
@@ -565,7 +602,9 @@ class IntelPowerControl(QWidget):
             if curclock == maxclock:
                 p.setPen(Qt.red)
             p.drawText(
-                pix.rect(), Qt.AlignBottom | Qt.AlignHCenter, "%s" % curclock
+                pix.rect(),
+                Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
+                "%s" % curclock,
             )
             p.restore()
         self.systrayCycle = (self.systrayCycle + 1) % 4
@@ -620,12 +659,9 @@ class IntelPowerControl(QWidget):
 
         # thermals
         for k, v in self.thermals.items():
+            path = os.path.join(self.thermalbasepath, k, "temp")
             try:
-                value =  int(
-                    self.readValue(
-                        os.path.join(self.thermalbasepath, k, "temp")
-                    )
-                ) / 1000
+                value = int(self.readValue(path)) / 1000
             except ValueError:
                 value = -1
 
@@ -926,7 +962,7 @@ def main():
         QIcon(getDataFile("intel-power-control.png", subdir="icons"))
     )
     i = IntelPowerControl()
-    return a.exec_()
+    return a.exec()
 
 
 if __name__ == "__main__":
