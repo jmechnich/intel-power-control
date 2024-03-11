@@ -581,7 +581,7 @@ class IntelPowerControl(QWidget):
             if self.avgtemp > 0:
                 temp = round(self.avgtemp)
                 if self.maxtemp.isEnabled() and temp >= self.maxtemp.value():
-                    p.setPen(Qt.red)
+                    p.setPen(QColorConstants.Red)
             p.drawText(
                 pix.rect(),
                 Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
@@ -600,7 +600,7 @@ class IntelPowerControl(QWidget):
             curclock = gpu[Cols.CUR][0].text().split()[0]
             maxclock = gpu[Cols.MAX][0].text().split()[0]
             if curclock == maxclock:
-                p.setPen(Qt.red)
+                p.setPen(QColorConstants.Red)
             p.drawText(
                 pix.rect(),
                 Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
