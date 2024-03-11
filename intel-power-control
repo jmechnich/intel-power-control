@@ -62,6 +62,8 @@ def which(program):
 
     return None
 
+def hexColor(color):
+    return f"#{hex(color.rgb())[2:]}"
 
 class Cols(IntEnum):
     CUR = 0
@@ -88,6 +90,7 @@ class IntelPowerControl(QWidget):
 
     def __init__(self, parent=None):
         super(IntelPowerControl, self).__init__(parent)
+        self.textColor = QGuiApplication.palette().text().color()
         self.checkHelper()
         self.systray = None
         self.systrayCycle = 0
@@ -516,7 +519,7 @@ class IntelPowerControl(QWidget):
         for k, v in self.thermals.items():
             label, val, typename = v
             stylesheet = "QLabel { color: %s }" % (
-                "black" if val < newmax else "red"
+                hexColor(self.textColor) if val < newmax else "red"
             )
             label.setStyleSheet(stylesheet)
         s = QSettings()
@@ -538,7 +541,7 @@ class IntelPowerControl(QWidget):
         if state == False:
             for k, v in self.thermals.items():
                 label, val, typename = v
-                stylesheet = "QLabel { color: black }"
+                stylesheet = f"QLabel {{ color: {hexColor(self.textColor)} }}"
                 label.setStyleSheet(stylesheet)
 
     def setActiveThermal(self, index):
@@ -749,7 +752,7 @@ class IntelPowerControl(QWidget):
                 if val > self.maxtemp.value():
                     label.setStyleSheet("QLabel { color: red }")
                 else:
-                    label.setStyleSheet("QLabel { color: black }")
+                    label.setStyleSheet(f"QLabel {{ color: {hexColor(self.textColor)} }}")
 
         # gpus
         for k, v in self.gpulabels.items():
