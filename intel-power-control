@@ -160,159 +160,173 @@ class IntelPowerControl(QWidget):
             ev.accept()
 
     def initCPUs(self):
+        self.cpulabels = {}
         box = QGroupBox("CPU State")
         layout = QHBoxLayout()
-        self.cpulabels = {}
-        cpus = [
-            c for c in os.listdir(self.cpubasepath) if re.match(r"^cpu\d+$", c)
-        ]
-        self.cpumapper = QSignalMapper()
-        for i in natural_sort(cpus):
-            l = QPushButton(i)
-            if not self.suidhelper:
-                l.setDisabled(True)
-            self.cpumapper.setMapping(l, i)
-            l.clicked.connect(self.cpumapper.map)
+        if not os.path.isdir(self.cpubasepath):
+            l = QLabel(f"No cpu info at '{self.cpubasepath}'")
             layout.addWidget(l)
-            self.cpulabels[i] = (l, "green")
-        self.cpumapper.mappedString.connect(self.toggleCPU)
+        else:
+            cpus = [
+                c for c in os.listdir(self.cpubasepath) if re.match(r"^cpu\d+$", c)
+            ]
+            self.cpumapper = QSignalMapper()
+            for i in natural_sort(cpus):
+                l = QPushButton(i)
+                if not self.suidhelper:
+                    l.setDisabled(True)
+                self.cpumapper.setMapping(l, i)
+                l.clicked.connect(self.cpumapper.map)
+                layout.addWidget(l)
+                self.cpulabels[i] = (l, "green")
+            self.cpumapper.mappedString.connect(self.toggleCPU)
         box.setLayout(layout)
         self.layout.addWidget(box)
 
     def initThermals(self):
-        box = QGroupBox("Thermal Zones")
-        layout = QGridLayout()
         self.thermals = {}
-        thermals = [
-            t.strip()
-            for t in os.listdir(self.thermalbasepath)
-            if t.startswith("thermal_zone")
-        ]
-        layout.addWidget(QLabel("Temperature"), 0, 1)
-        layout.addWidget(QLabel("Type"), 0, 2)
-        i = 1
-        for t in sorted(thermals):
-            layout.addWidget(QLabel(t), i, 0)
-            tlabel = QLabel("0°C")
-            layout.addWidget(tlabel, i, 1)
-            typename = self.readValue(
-                os.path.join(self.thermalbasepath, t, "type")
-            )
-            layout.addWidget(QLabel(typename), i, 2)
-            self.thermals[t] = (tlabel, 0, typename)
-            i += 1
-        layout.setColumnStretch(2, 1)
+        box = QGroupBox("Thermal Zones")
+        if not os.path.isdir(self.thermalbasepath):
+            layout = QHBoxLayout()
+            l = QLabel(f"No thermal zone info at '{self.thermalbasepath}'")
+            layout.addWidget(l)
+        else:
+            layout = QGridLayout()
+            thermals = [
+                t.strip()
+                for t in os.listdir(self.thermalbasepath)
+                if t.startswith("thermal_zone")
+            ]
+            layout.addWidget(QLabel("Temperature"), 0, 1)
+            layout.addWidget(QLabel("Type"), 0, 2)
+            i = 1
+            for t in sorted(thermals):
+                layout.addWidget(QLabel(t), i, 0)
+                tlabel = QLabel("0°C")
+                layout.addWidget(tlabel, i, 1)
+                typename = self.readValue(
+                    os.path.join(self.thermalbasepath, t, "type")
+                )
+                layout.addWidget(QLabel(typename), i, 2)
+                self.thermals[t] = (tlabel, 0, typename)
+                i += 1
+            layout.setColumnStretch(2, 1)
         box.setLayout(layout)
         self.layout.addWidget(box)
 
     def initGPUs(self):
-        box = QGroupBox("GPU Clock")
-        layout = QGridLayout()
         self.gpulabels = {}
         self.gpusliders = {}
-        gpulabels = [
-            g for g in os.listdir(self.gpubasepath) if re.match(r"^card\d$", g)
-        ]
-        self.gpuminmapper = QSignalMapper()
-        self.gpumaxmapper = QSignalMapper()
-        self.gpuboostmapper = QSignalMapper()
-        layout.addWidget(QLabel("Current"), 0, Cols.CUR + 1)
-        layout.addWidget(QLabel("Minimum"), 0, Cols.MIN + 1)
-        layout.addWidget(QLabel("Maximum"), 0, Cols.MAX + 1)
-        layout.addWidget(QLabel("Boost"), 0, Cols.BST + 1)
-        row = 1
-        for card in sorted(gpulabels):
-            dirname = os.path.join(self.gpubasepath, card)
-            # check if card vendor is Intel
-            with open(os.path.join(dirname, "device", "vendor")) as f:
-                vendor = f.readline().strip()
-            if vendor != "0x8086":
-                continue
-            # check for minimal control file availability
-            if not os.path.exists(os.path.join(dirname, "gt_cur_freq_mhz")):
-                continue
-            if not os.path.exists(os.path.join(dirname, "gt_min_freq_mhz")):
-                continue
-            if not os.path.exists(os.path.join(dirname, "gt_max_freq_mhz")):
-                continue
-            if not os.path.exists(os.path.join(dirname, "gt_boost_freq_mhz")):
-                continue
-            layout.addWidget(QLabel(card), row, 0)
-            l0 = QLabel("0 MHz")
-            layout.addWidget(l0, row, Cols.CUR + 1)
-            l1 = QLabel("0 MHz")
-            layout.addWidget(l1, row, Cols.MIN + 1)
-            l2 = QLabel("0 MHz")
-            layout.addWidget(l2, row, Cols.MAX + 1)
-            l3 = QLabel("0 MHz")
-            layout.addWidget(l3, row, Cols.BST + 1)
-            self.gpulabels[card] = ((l0, 0), (l1, 0), (l2, 0), (l3, 0))
-            gts = [g for g in os.listdir(dirname) if g.startswith("gt_RP")]
-            if not len(gts):
-                continue
+        box = QGroupBox("GPU Clock")
+        if not os.path.isdir(self.thermalbasepath):
+            layout = QHBoxLayout()
+            l = QLabel(f"No gpu info at '{self.gpubasepath}'")
+            layout.addWidget(l)
+        else:
+            layout = QGridLayout()
+            gpulabels = [
+                g for g in os.listdir(self.gpubasepath) if re.match(r"^card\d$", g)
+            ]
+            self.gpuminmapper = QSignalMapper()
+            self.gpumaxmapper = QSignalMapper()
+            self.gpuboostmapper = QSignalMapper()
+            layout.addWidget(QLabel("Current"), 0, Cols.CUR + 1)
+            layout.addWidget(QLabel("Minimum"), 0, Cols.MIN + 1)
+            layout.addWidget(QLabel("Maximum"), 0, Cols.MAX + 1)
+            layout.addWidget(QLabel("Boost"), 0, Cols.BST + 1)
+            row = 1
+            for card in sorted(gpulabels):
+                dirname = os.path.join(self.gpubasepath, card)
+                # check if card vendor is Intel
+                with open(os.path.join(dirname, "device", "vendor")) as f:
+                    vendor = f.readline().strip()
+                if vendor != "0x8086":
+                    continue
+                # check for minimal control file availability
+                if not os.path.exists(os.path.join(dirname, "gt_cur_freq_mhz")):
+                    continue
+                if not os.path.exists(os.path.join(dirname, "gt_min_freq_mhz")):
+                    continue
+                if not os.path.exists(os.path.join(dirname, "gt_max_freq_mhz")):
+                    continue
+                if not os.path.exists(os.path.join(dirname, "gt_boost_freq_mhz")):
+                    continue
+                layout.addWidget(QLabel(card), row, 0)
+                l0 = QLabel("0 MHz")
+                layout.addWidget(l0, row, Cols.CUR + 1)
+                l1 = QLabel("0 MHz")
+                layout.addWidget(l1, row, Cols.MIN + 1)
+                l2 = QLabel("0 MHz")
+                layout.addWidget(l2, row, Cols.MAX + 1)
+                l3 = QLabel("0 MHz")
+                layout.addWidget(l3, row, Cols.BST + 1)
+                self.gpulabels[card] = ((l0, 0), (l1, 0), (l2, 0), (l3, 0))
+                gts = [g for g in os.listdir(dirname) if g.startswith("gt_RP")]
+                if not len(gts):
+                    continue
 
-            states = {}
-            for g in gts:
-                state = re.match(r"gt_(RP[n\d])_freq_mhz", g).groups()[0]
-                states[state] = self.readValue(os.path.join(dirname, g))
-            rps = sorted(states.keys())
-            rps_max = int(states[rps[0]])
-            rps_min = int(states[rps[-1]])
-            row += 1
-            minslider = QSlider(Qt.Orientation.Horizontal)
-            minslider.setRange(
-                round(rps_min / self.gpuclkdiv), round(rps_max / self.gpuclkdiv)
-            )
-            minslider.setTickPosition(QSlider.TickPosition.TicksBelow)
-            minslider.setTickInterval(1)
-            minslider.setPageStep(1)
-            if not self.suidhelper:
-                minslider.setDisabled(True)
-            self.gpuminmapper.setMapping(minslider, card)
-            minslider.valueChanged.connect(self.gpuminmapper.map)
-            layout.addWidget(minslider, row, 1, 1, len(Cols))
-            row += 1
-            maxslider = QSlider(Qt.Orientation.Horizontal)
-            maxslider.setRange(
-                round(rps_min / self.gpuclkdiv), round(rps_max / self.gpuclkdiv)
-            )
-            maxslider.setTickPosition(QSlider.TickPosition.TicksBelow)
-            maxslider.setTickInterval(1)
-            maxslider.setPageStep(1)
-            if not self.suidhelper:
-                maxslider.setDisabled(True)
-            self.gpumaxmapper.setMapping(maxslider, card)
-            maxslider.valueChanged.connect(self.gpumaxmapper.map)
-            layout.addWidget(maxslider, row, 1, 1, len(Cols))
-            row += 1
-            boostslider = QSlider(Qt.Orientation.Horizontal)
-            boostslider.setRange(
-                round(rps_min / self.gpuclkdiv), round(rps_max / self.gpuclkdiv)
-            )
-            boostslider.setTickPosition(QSlider.TickPosition.TicksBelow)
-            boostslider.setTickInterval(1)
-            boostslider.setPageStep(1)
-            if not self.suidhelper:
-                boostslider.setDisabled(True)
-            self.gpuboostmapper.setMapping(boostslider, card)
-            boostslider.valueChanged.connect(self.gpuboostmapper.map)
-            resetBtn = QPushButton("Reset")
-            resetBtn.clicked.connect(
-                lambda: (
-                    minslider.setValue(minslider.minimum()),
-                    maxslider.setValue(maxslider.maximum()),
-                    boostslider.setValue(boostslider.maximum()),
+                states = {}
+                for g in gts:
+                    state = re.match(r"gt_(RP[n\d])_freq_mhz", g).groups()[0]
+                    states[state] = self.readValue(os.path.join(dirname, g))
+                rps = sorted(states.keys())
+                rps_max = int(states[rps[0]])
+                rps_min = int(states[rps[-1]])
+                row += 1
+                minslider = QSlider(Qt.Orientation.Horizontal)
+                minslider.setRange(
+                    round(rps_min / self.gpuclkdiv), round(rps_max / self.gpuclkdiv)
                 )
-            )
-            layout.addWidget(resetBtn, row, 0)
-            layout.addWidget(boostslider, row, 1, 1, len(Cols))
-            row += 1
-            self.gpusliders[card] = (minslider, maxslider, boostslider)
-        self.gpuminmapper.mappedString.connect(self.setMinimumClock)
-        self.gpumaxmapper.mappedString.connect(self.setMaximumClock)
-        self.gpuboostmapper.mappedString.connect(self.setBoostClock)
-        # layout.setColumnStretch(3,1)
-        layout.setHorizontalSpacing(10)
+                minslider.setTickPosition(QSlider.TickPosition.TicksBelow)
+                minslider.setTickInterval(1)
+                minslider.setPageStep(1)
+                if not self.suidhelper:
+                    minslider.setDisabled(True)
+                self.gpuminmapper.setMapping(minslider, card)
+                minslider.valueChanged.connect(self.gpuminmapper.map)
+                layout.addWidget(minslider, row, 1, 1, len(Cols))
+                row += 1
+                maxslider = QSlider(Qt.Orientation.Horizontal)
+                maxslider.setRange(
+                    round(rps_min / self.gpuclkdiv), round(rps_max / self.gpuclkdiv)
+                )
+                maxslider.setTickPosition(QSlider.TickPosition.TicksBelow)
+                maxslider.setTickInterval(1)
+                maxslider.setPageStep(1)
+                if not self.suidhelper:
+                    maxslider.setDisabled(True)
+                self.gpumaxmapper.setMapping(maxslider, card)
+                maxslider.valueChanged.connect(self.gpumaxmapper.map)
+                layout.addWidget(maxslider, row, 1, 1, len(Cols))
+                row += 1
+                boostslider = QSlider(Qt.Orientation.Horizontal)
+                boostslider.setRange(
+                    round(rps_min / self.gpuclkdiv), round(rps_max / self.gpuclkdiv)
+                )
+                boostslider.setTickPosition(QSlider.TickPosition.TicksBelow)
+                boostslider.setTickInterval(1)
+                boostslider.setPageStep(1)
+                if not self.suidhelper:
+                    boostslider.setDisabled(True)
+                self.gpuboostmapper.setMapping(boostslider, card)
+                boostslider.valueChanged.connect(self.gpuboostmapper.map)
+                resetBtn = QPushButton("Reset")
+                resetBtn.clicked.connect(
+                    lambda: (
+                        minslider.setValue(minslider.minimum()),
+                        maxslider.setValue(maxslider.maximum()),
+                        boostslider.setValue(boostslider.maximum()),
+                    )
+                )
+                layout.addWidget(resetBtn, row, 0)
+                layout.addWidget(boostslider, row, 1, 1, len(Cols))
+                row += 1
+                self.gpusliders[card] = (minslider, maxslider, boostslider)
+            self.gpuminmapper.mappedString.connect(self.setMinimumClock)
+            self.gpumaxmapper.mappedString.connect(self.setMaximumClock)
+            self.gpuboostmapper.mappedString.connect(self.setBoostClock)
+            # layout.setColumnStretch(3,1)
+            layout.setHorizontalSpacing(10)
         box.setLayout(layout)
         self.layout.addWidget(box)
 
@@ -596,11 +610,14 @@ class IntelPowerControl(QWidget):
             )
         elif self.systrayCycle == 3:
             p.save()
-            gpu = min(self.gpulabels.values(), key=lambda x: x[0][0].text())
-            curclock = gpu[Cols.CUR][0].text().split()[0]
-            maxclock = gpu[Cols.MAX][0].text().split()[0]
-            if curclock == maxclock:
-                p.setPen(QColorConstants.Red)
+            if len(self.gpulabels):
+                gpu = min(self.gpulabels.values(), key=lambda x: x[0][0].text())
+                curclock = gpu[Cols.CUR][0].text().split()[0]
+                maxclock = gpu[Cols.MAX][0].text().split()[0]
+                if curclock == maxclock:
+                    p.setPen(QColorConstants.Red)
+            else:
+                curclock = '-'
             p.drawText(
                 pix.rect(),
                 Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
@@ -717,7 +734,8 @@ class IntelPowerControl(QWidget):
             temp = 0
             for k, v in self.thermals.items():
                 temp += v[1]
-            temp /= float(len(self.thermals))
+            if len(self.thermals):
+                temp /= float(len(self.thermals))
             self.sumtemp += temp
         self.counter = (self.counter + 1) % self.max_count
         if self.counter == 0:
